@@ -214,3 +214,137 @@ commit message rather than left for someone to find.
 failed partway — no `try/finally`. Rewritten to restore in a `finally` block and
 assert the file is clean before starting. Worth logging: a tool that edits source
 in place needs its rollback to be the part you check hardest.
+
+---
+
+## Feature 3 — Search + combined filters
+
+### P11 — Shape the API before writing it
+
+> I want text search on tasks. Before any code: should this be a new
+> `/tasks/search` endpoint or another query parameter on `GET /tasks`? Argue
+> both, then say which you would ship given that `status`, `priority`, `overdue`
+> and `tag` already exist and already AND together.
+
+**Returned:** both options, and the right recommendation — a `q` parameter,
+because a separate endpoint has to re-declare the four existing filters or
+refuse to combine with them.
+
+**Accepted.** Worth noting the assistant's *unprompted* first instinct in an
+earlier draft had been the separate endpoint; asked to argue both sides it
+talked itself out of it. Asking for the comparison cost one message.
+
+### P12 — Pin the matching rules, including the boring ones
+
+> Implement `q` on `GET /tasks`. Rules: case-insensitive; substring, not prefix;
+> matched against title **or** description and nothing else; the term is literal,
+> so `?q=.*` finds tasks containing the characters `.*`; trimmed, and blank after
+> trimming means no filter rather than no matches. ANDs with the existing four.
+> Touch `storage.py` and `main.py` only.
+
+**Returned:** the shipped implementation.
+
+**Rejected:** an earlier suggestion to search `assignee` and `tags` as well.
+Typing `backend` would then return tasks that merely carry a `backend` tag,
+duplicating the dropdown next to the search box and making results impossible to
+explain. Free-text search over free-text fields.
+
+**Rejected:** splitting the query on whitespace and ORing the words. `pay api`
+matching everything containing `api` reads as a bug to anyone who meant the
+phrase.
+
+### P13 — Make it not hammer the server
+
+> Wire the search box into the toolbar. It must not issue a request per
+> keystroke. Then tell me how you would *prove* the debounce works rather than
+> assert it does.
+
+**Returned:** a 250ms debounce, plus the suggestion to wrap `window.fetch` and
+count calls while dispatching synthetic `input` events.
+
+**Accepted**, and it paid off: typing an eight-letter word produced exactly one
+board request instead of eight (16 including the tag-vocabulary fetch). That
+measurement is in [verification.md](verification.md), not a claim in a comment.
+
+---
+
+## Feature 4 — Comments + activity log
+
+### P14 — Scope first, again
+
+> I want comments and an activity log on tasks. Before proposing anything, list
+> what you would *not* build and why, given this is an in-memory store with no
+> users and no auth. Then give me the smallest version that still shows a
+> timeline and a comment thread in the UI.
+
+**Returned:** a sensible exclusion list — threading, @mentions, edit history,
+a board-wide feed — and a two-model design with nested routes.
+
+**Accepted**, with one addition: comments are **append-only**. Deleting a comment
+immediately raises "does its `commented` activity entry go too?", and either
+answer makes the log lie. That question is bigger than the feature; not having it
+is cheaper than answering it.
+
+### P15 — The design decision that mattered
+
+> For the activity log: if a single PATCH changes both priority and due date, do
+> you write one entry or two? Give me the rendering consequences of each, not
+> just the storage consequences.
+
+**Returned:** initially one entry per request holding a dict of changed fields.
+Pushed on rendering, it conceded that the timeline then displays JSON blobs and
+that "when did the priority last change?" requires opening every entry.
+
+**Edited to per-field entries.** The log now reads as sentences —
+`Priority: Medium → High`. Break 8 exists to stop this regressing.
+
+**Accepted:** its point that `updated_at` must be excluded from the tracked
+fields, or every change would log twice.
+
+### P16 — Where the recording lives, and what it must not touch
+
+> Record activity in `storage.py`, not the routes — it is the only layer that
+> sees the task before and after. Constraints: a PATCH re-sending a field's
+> current value logs nothing; posting a comment records an entry but must **not**
+> change the task's `updated_at`, because commenting is not editing; deleting a
+> task removes its comments and activity.
+
+**Returned:** the shipped storage layer.
+
+**Rejected:** keeping activity rows after the task was deleted, argued as
+"audit logs should be append-only". Activity is only reachable through
+`GET /tasks/{id}/activity`, which 404s once the task is gone — so the rows were
+unreadable by construction and simply leaked. A durable audit log is a different
+feature with a different endpoint.
+
+### P17 — Adversarial pass, and a test that could not fail
+
+> Here are the new comment and activity tests. Find any that would still pass if
+> I broke the rule they claim to cover.
+
+**Returned:** the observation that
+`test_commenting_does_not_change_the_task_updated_at` asserts the timestamp is
+*unchanged* — which is true automatically, because the system clock does not
+advance during a sub-millisecond request. It would pass even if commenting did
+stamp the task.
+
+**Accepted**, and it generalised: the same clock granularity made a *pre-existing*
+test (`test_patch_partial_update_keeps_other_fields`) flaky in the opposite
+direction. Measuring rather than retrying showed 20,000 calls to `datetime.now()`
+returning two distinct values. Both tests now wait out a clock tick. Full write-up
+in [verification.md](verification.md) §6.
+
+### P18 — Refactor, contract stated first
+
+> There are now two modals duplicating the same shell: toggle `is-open`, mirror
+> `aria-hidden`, lock body scroll, close on ×/backdrop/Escape — including two
+> separate document keydown listeners. Write the observable behaviour contract
+> first, then collapse both onto one controller. I will verify by wrapping
+> `window.fetch` and reading the DOM.
+
+**Returned:** a twelve-point contract and the `createModal` helper.
+
+**Accepted**, with one correction: the first version ran the caller's `onOpen`
+*after* revealing the dialog, which flashes the previous task's values for a
+frame, and tried to focus the title input before it was visible — focus silently
+fails on a hidden element. Populate before showing; focus after.

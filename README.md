@@ -4,8 +4,10 @@ A learning-project Kanban task tracker: a REST API built with Python, FastAPI an
 Pydantic, plus a dependency-free single-file frontend.
 
 Tasks have a title, description, status, priority, assignee, an optional **due
-date** (with server-computed overdue state) and **tags**. The board supports
-drag-and-drop between columns and filtering by overdue state and tag.
+date** (with server-computed overdue state) and **tags**, and they carry
+**comments** and a per-field **activity log**. The board supports drag-and-drop
+between columns, full-text **search**, and stacking filters for priority, tag and
+overdue state.
 
 ## Requirements
 
@@ -58,19 +60,33 @@ by `file://`.
 pytest -q
 ```
 
-57 tests covering CRUD, validation, status-transition rules, due dates / overdue
-state, and tags / tag filtering.
+110 tests covering CRUD, validation, status-transition rules, due dates /
+overdue state, tags and tag filtering, text search, comments, and the activity
+log.
 
 ## API
 
 | Method | Endpoint | Notes |
 |---|---|---|
 | `GET` | `/health` | Liveness check |
-| `GET` | `/tasks` | Optional filters: `status`, `priority`, `overdue`, `tag` — all combine with AND |
+| `GET` | `/tasks` | Optional filters: `status`, `priority`, `overdue`, `tag`, `q` — all combine with AND |
 | `POST` | `/tasks` | Create a task; `201` on success |
 | `GET` | `/tasks/{id}` | `404` if unknown |
 | `PATCH` | `/tasks/{id}` | Partial update; only the fields sent are changed |
-| `DELETE` | `/tasks/{id}` | `204` on success |
+| `DELETE` | `/tasks/{id}` | `204` on success; also removes the task's comments and activity |
+| `GET` | `/tasks/{id}/comments` | Comments, oldest first; `404` if the task is unknown |
+| `POST` | `/tasks/{id}/comments` | Add a comment; `201` on success |
+| `GET` | `/tasks/{id}/activity` | Change history, newest first; `404` if the task is unknown |
+
+### Filters
+
+| Param | Type | Notes |
+|---|---|---|
+| `status` | enum | Exact match |
+| `priority` | enum | Exact match |
+| `overdue` | bool | Tri-state: omitted = all, `true` = only overdue, `false` = only the rest |
+| `tag` | string | Case-insensitive exact match against any one tag |
+| `q` | string | Case-insensitive **literal substring** of title or description. Trimmed; blank means no filter. Does not match assignee or tags. |
 
 ### Task fields
 
@@ -85,7 +101,26 @@ state, and tags / tag filtering.
 | `due_date` | date \| null | ISO `YYYY-MM-DD`; send `null` to clear |
 | `tags` | string[] | Max 10, each max 24 chars, trimmed, deduplicated case-insensitively |
 | `is_overdue` | bool | **Read-only, computed** — due date in the past and status is not `Done` |
+| `comment_count` | int | **Read-only, derived** from the comment store on every read |
 | `created_at` / `updated_at` | datetime | UTC, server-assigned |
+
+### Comment fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` / `task_id` | string | Server-assigned |
+| `author` | string \| null | Optional, max 80 chars; blank is stored as `null` and shown as "Anonymous" |
+| `body` | string | Required, trimmed, max 2000 chars |
+| `created_at` | datetime | UTC |
+
+### Activity fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | enum | `created` · `updated` · `commented` |
+| `field` | string \| null | Which field changed (`updated` entries only) |
+| `from_value` / `to_value` | string \| null | Flattened to text, truncated at 80 chars |
+| `at` | datetime | UTC |
 
 **Status transitions** are restricted: `ToDo → InProgress`, `InProgress → Done`,
 `Done → InProgress`, and same-status no-ops. Anything else returns `422`.
@@ -93,6 +128,11 @@ state, and tags / tag filtering.
 **Overdue** is derived on every read rather than stored, so a task becomes overdue
 when the date rolls over without needing to be written to. A task due *today* is
 not overdue, and a `Done` task is never overdue.
+
+**Activity** is recorded per changed field, so a `PATCH` that changes priority and
+due date writes two entries. A `PATCH` re-sending a field's current value records
+nothing. Commenting records an entry but does **not** change the task's
+`updated_at`. Comments are append-only — there is no edit or delete.
 
 ### Examples
 
@@ -103,12 +143,19 @@ curl -X POST http://localhost:8000/tasks \
   -d '{"title":"Ship release notes","priority":"High",
        "due_date":"2026-08-14","tags":["backend","urgent"]}'
 
-# only overdue tasks, in one tag
-curl "http://localhost:8000/tasks?overdue=true&tag=backend"
+# overdue backend tasks mentioning "migration" — filters stack with AND
+curl "http://localhost:8000/tasks?q=migration&tag=backend&overdue=true"
 
 # clear a due date
 curl -X PATCH http://localhost:8000/tasks/<id> \
   -H "Content-Type: application/json" -d '{"due_date":null}'
+
+# comment on a task, then read its history
+curl -X POST http://localhost:8000/tasks/<id>/comments \
+  -H "Content-Type: application/json" \
+  -d '{"author":"alice","body":"Blocked on the migration."}'
+
+curl http://localhost:8000/tasks/<id>/activity
 ```
 
 ## Project structure
@@ -116,8 +163,8 @@ curl -X PATCH http://localhost:8000/tasks/<id> \
 ```
 app/
   main.py            FastAPI app, routes, CORS
-  models.py          Pydantic models, validation, overdue rule
-  storage.py         In-memory store and filtering
+  models.py          Pydantic models, validation, overdue rule, activity values
+  storage.py         In-memory stores, filtering, activity recording
   business_rules.py  Status-transition rules
   core/config.py     Settings loaded from .env
   api/routes/        Health router
@@ -125,7 +172,9 @@ frontend/
   index.html         Kanban board (no build step, no dependencies)
 tests/
   conftest.py        TestClient + storage-reset fixtures
-  test_tasks.py      Task CRUD, filters, due dates, tags
+  test_tasks.py      Task CRUD, filters, due dates, tags, search
+  test_comments.py   Comment CRUD, validation, comment_count
+  test_activity.py   Activity entries, value formatting, cascade
   test_health.py     Health endpoint
 docs/midcourse/      Mid-course project documentation
 ```

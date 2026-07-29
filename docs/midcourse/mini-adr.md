@@ -195,6 +195,16 @@ per card on every board load.
   *previous day* for any user west of Greenwich.
 - **CORS accepts any localhost origin by regex** instead of three hardcoded
   ports, so the board works whatever port the static frontend is served on.
+- **`requirements.txt` cut from 67 pinned packages to 8.** It was a `pip freeze`
+  of a much larger environment — Flask, SQLAlchemy, pandas, matplotlib,
+  scikit-learn, xgboost, reportlab, APScheduler — none of which this project
+  imports. It was also UTF-16 encoded, which is why an earlier grep for those
+  package names came back empty and the pollution was missed the first time.
+  Replaced with the eight direct dependencies, in UTF-8, and verified by
+  installing into a fresh virtualenv and running the suite there: 32 packages
+  resolved, 110 tests passed.
+- **Two flawed timestamp assertions fixed** — one flaky, one that could not fail.
+  See [verification.md](verification.md) §6.
 
 ## Explicitly out of scope
 
