@@ -12,7 +12,16 @@ from app import storage
 from app.api.routes import health
 from app.business_rules import validate_status_transition
 from app.core.config import settings
-from app.models import TaskCreate, TaskPriority, TaskResponse, TaskStatus, TaskUpdate
+from app.models import (
+    ActivityEntry,
+    CommentCreate,
+    CommentResponse,
+    TaskCreate,
+    TaskPriority,
+    TaskResponse,
+    TaskStatus,
+    TaskUpdate,
+)
 
 
 def create_app() -> FastAPI:
@@ -97,3 +106,37 @@ def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
 def delete_task(task_id: str) -> None:
     if not storage.delete_task(task_id):
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+
+
+@app.post(
+    "/tasks/{task_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["comments"],
+)
+def create_comment(task_id: str, payload: CommentCreate) -> CommentResponse:
+    """Append a comment to a task. Commenting does not change the task itself."""
+    comment = storage.add_comment(task_id, payload)
+    if comment is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return comment
+
+
+@app.get("/tasks/{task_id}/comments", response_model=list[CommentResponse], tags=["comments"])
+def list_comments(task_id: str) -> list[CommentResponse]:
+    """A task's comments, oldest first. Unknown task is 404, not an empty list —
+    a mistyped id should not look like a task nobody has commented on."""
+    comments = storage.get_comments(task_id)
+    if comments is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return comments
+
+
+@app.get("/tasks/{task_id}/activity", response_model=list[ActivityEntry], tags=["activity"])
+def list_activity(task_id: str) -> list[ActivityEntry]:
+    """A task's history, newest first: one entry per changed field, plus
+    creation and comments."""
+    entries = storage.get_activity(task_id)
+    if entries is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return entries

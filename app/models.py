@@ -142,6 +142,10 @@ class TaskResponse(BaseModel):
     assignee: Optional[str]
     due_date: Optional[date] = None
     tags: list[str] = Field(default_factory=list)
+    # Stamped by the storage layer on every read from the live comment store.
+    # Not a computed field: the model cannot see storage, and storage importing
+    # models (rather than the reverse) is the dependency direction we want.
+    comment_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -150,3 +154,99 @@ class TaskResponse(BaseModel):
     def is_overdue(self) -> bool:
         """Derived on read, never stored — a stored flag would go stale at midnight."""
         return compute_is_overdue(self.due_date, self.status)
+
+
+MAX_COMMENT_LENGTH = 2000
+MAX_AUTHOR_LENGTH = 80
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str
+    author: Optional[str] = None
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("comment body must not be blank")
+        if len(stripped) > MAX_COMMENT_LENGTH:
+            raise ValueError(f"comment body must be at most {MAX_COMMENT_LENGTH} characters")
+        return stripped
+
+    @field_validator("author")
+    @classmethod
+    def validate_author(cls, value: Optional[str]) -> Optional[str]:
+        # A blank author is "anonymous", not a mistake — only an absurdly long
+        # one is worth rejecting.
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if len(stripped) > MAX_AUTHOR_LENGTH:
+            raise ValueError(f"author must be at most {MAX_AUTHOR_LENGTH} characters")
+        return stripped
+
+
+class CommentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task_id: str
+    author: Optional[str]
+    body: str
+    created_at: datetime
+
+
+class ActivityKind(str, Enum):
+    CREATED = "created"
+    UPDATED = "updated"
+    COMMENTED = "commented"
+
+
+MAX_ACTIVITY_VALUE_LENGTH = 80
+
+
+def describe_value(value: object) -> Optional[str]:
+    """Flatten a task field value into a short string for the activity log.
+
+    The log is heterogeneous — dates, enums, tag lists, free text — so every
+    value is rendered as a string or as None. None and "empty" collapse to the
+    same thing, which the timeline shows as "(none)": a task going from no tags
+    to no tags is not a change anyone needs two spellings of.
+
+    Long values are truncated, so pasting an essay into a description does not
+    store a second copy of it in the log.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        return str(value.value)
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value) or None
+    if isinstance(value, date):
+        return value.isoformat()
+
+    text = str(value)
+    if not text:
+        return None
+    if len(text) > MAX_ACTIVITY_VALUE_LENGTH:
+        return text[: MAX_ACTIVITY_VALUE_LENGTH - 1] + "…"
+    return text
+
+
+class ActivityEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    task_id: str
+    kind: ActivityKind
+    # `field` is set for `updated` entries only; `to_value` carries a preview of
+    # the comment for `commented` entries.
+    field: Optional[str] = None
+    from_value: Optional[str] = None
+    to_value: Optional[str] = None
+    at: datetime
