@@ -1048,10 +1048,11 @@
     let boardState = "loading";
     let boardMessage = "";
     let activeDragTaskId = null;
-    let modalState = { isOpen: false, mode: "create", taskId: null, originalTask: null };
+    // `isOpen` is not tracked here: each modal's controller owns it.
+    let modalState = { mode: "create", taskId: null, originalTask: null };
     let filterState = { q: "", priority: "", tag: "", overdue: false };
     let knownTags = [];
-    let detailState = { isOpen: false, task: null, comments: [], activity: [] };
+    let detailState = { task: null, comments: [], activity: [] };
 
     const SEARCH_DEBOUNCE_MS = 250;
 
@@ -1258,21 +1259,73 @@
             });
     }
 
-    function openTaskModal(task = null) {
-        const modal = document.getElementById("task-modal");
+    /* Both dialogs behave identically as *shells*: toggle .is-open, mirror that
+       into aria-hidden, lock the page behind them, and close on Escape, the ×,
+       Cancel or a backdrop click. Only what happens on open and close differs,
+       so that is all a caller supplies. Before this, each modal carried its own
+       copy — including its own document-level Escape listener. */
+    function createModal(modalId, { closeButtonIds = [], onOpen, onClose } = {}) {
+        const modal = document.getElementById(modalId);
+        let isOpen = false;
+
+        function open(context) {
+            if (!modal) {
+                return;
+            }
+            // Populate before revealing, so nothing flashes the previous task.
+            if (onOpen) {
+                onOpen(context);
+            }
+            isOpen = true;
+            modal.classList.add("is-open");
+            modal.setAttribute("aria-hidden", "false");
+            document.body.style.overflow = "hidden";
+        }
+
+        function close() {
+            if (!modal) {
+                return;
+            }
+            isOpen = false;
+            modal.classList.remove("is-open");
+            modal.setAttribute("aria-hidden", "true");
+            document.body.style.overflow = "";
+            if (onClose) {
+                onClose();
+            }
+        }
+
+        closeButtonIds.forEach((id) => {
+            document.getElementById(id)?.addEventListener("click", close);
+        });
+
+        if (modal) {
+            modal.addEventListener("click", (event) => {
+                if (event.target === modal) {
+                    close();
+                }
+            });
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && isOpen) {
+                close();
+            }
+        });
+
+        return { open, close };
+    }
+
+    function fillTaskForm(task) {
         const form = document.getElementById("task-form");
         const modalTitle = document.getElementById("task-modal-title");
         const taskIdInput = document.getElementById("taskId");
-
-        if (!modal || !form || !modalTitle || !taskIdInput) {
-            return;
-        }
 
         clearTaskErrors();
         form.reset();
         taskIdInput.value = "";
 
-        modalState = { isOpen: true, mode: task ? "edit" : "create", taskId: task?.id || null, originalTask: task || null };
+        modalState = { mode: task ? "edit" : "create", taskId: task?.id || null, originalTask: task || null };
 
         if (task) {
             modalTitle.textContent = "Edit Task";
@@ -1289,29 +1342,26 @@
             document.getElementById("status").value = "ToDo";
             document.getElementById("priority").value = "Medium";
         }
-
-        modal.classList.add("is-open");
-        modal.setAttribute("aria-hidden", "false");
-        document.body.style.overflow = "hidden";
-        setTimeout(() => document.getElementById("title").focus(), 0);
     }
 
-    function closeTaskModal() {
-        const modal = document.getElementById("task-modal");
-        if (modal) {
-            modal.classList.remove("is-open");
-            modal.setAttribute("aria-hidden", "true");
-        }
-
+    function resetTaskForm() {
         clearTaskErrors();
         const form = document.getElementById("task-form");
         if (form) {
             form.reset();
             document.getElementById("taskId").value = "";
         }
+        modalState = { mode: "create", taskId: null, originalTask: null };
+    }
 
-        modalState = { isOpen: false, mode: "create", taskId: null, originalTask: null };
-        document.body.style.overflow = "";
+    function openTaskModal(task = null) {
+        taskModal.open(task);
+        // After revealing: a hidden input cannot take focus.
+        setTimeout(() => document.getElementById("title").focus(), 0);
+    }
+
+    function closeTaskModal() {
+        taskModal.close();
     }
 
     function clearTaskErrors() {
@@ -1643,37 +1693,29 @@
         }
     }
 
-    function openDetailModal(task) {
-        const modal = document.getElementById("detail-modal");
-        const title = document.getElementById("detail-modal-title");
-        if (!modal || !title) {
-            return;
-        }
-
-        detailState = { isOpen: true, task, comments: [], activity: [] };
-        title.textContent = task.title;
+    function fillDetailPanel(task) {
+        detailState = { task, comments: [], activity: [] };
+        document.getElementById("detail-modal-title").textContent = task.title;
         clearCommentError();
         document.getElementById("comment-form").reset();
+        // Render the empty state immediately; the fetch fills it in.
         renderCommentList();
         renderActivityList();
+    }
 
-        modal.classList.add("is-open");
-        modal.setAttribute("aria-hidden", "false");
-        document.body.style.overflow = "hidden";
+    function resetDetailPanel() {
+        clearCommentError();
+        document.getElementById("comment-form")?.reset();
+        detailState = { task: null, comments: [], activity: [] };
+    }
 
+    function openDetailModal(task) {
+        detailModal.open(task);
         loadDetail(task.id);
     }
 
     function closeDetailModal() {
-        const modal = document.getElementById("detail-modal");
-        if (modal) {
-            modal.classList.remove("is-open");
-            modal.setAttribute("aria-hidden", "true");
-        }
-        clearCommentError();
-        document.getElementById("comment-form")?.reset();
-        detailState = { isOpen: false, task: null, comments: [], activity: [] };
-        document.body.style.overflow = "";
+        detailModal.close();
     }
 
     async function handleCommentSubmit(event) {
@@ -1723,32 +1765,10 @@
         }
     }
 
-    function attachDetailInteractions() {
-        const modal = document.getElementById("detail-modal");
-        const closeButton = document.getElementById("detail-modal-close");
-        const form = document.getElementById("comment-form");
-
-        if (closeButton) {
-            closeButton.addEventListener("click", closeDetailModal);
-        }
-
-        if (modal) {
-            modal.addEventListener("click", (event) => {
-                if (event.target === modal) {
-                    closeDetailModal();
-                }
-            });
-        }
-
-        if (form) {
-            form.addEventListener("submit", handleCommentSubmit);
-        }
-
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && detailState.isOpen) {
-                closeDetailModal();
-            }
-        });
+    function attachFormInteractions() {
+        document.getElementById("new-task-button")?.addEventListener("click", () => openTaskModal());
+        document.getElementById("task-form")?.addEventListener("submit", handleTaskSubmit);
+        document.getElementById("comment-form")?.addEventListener("submit", handleCommentSubmit);
     }
 
     function renderColumn(status) {
@@ -1802,43 +1822,17 @@
         onCardButton(".details-button", openDetailModal);
     }
 
-    function attachModalInteractions() {
-        const newTaskButton = document.getElementById("new-task-button");
-        const modal = document.getElementById("task-modal");
-        const closeButton = document.getElementById("task-modal-close");
-        const cancelButton = document.getElementById("cancel-task");
-        const form = document.getElementById("task-form");
+    const taskModal = createModal("task-modal", {
+        closeButtonIds: ["task-modal-close", "cancel-task"],
+        onOpen: fillTaskForm,
+        onClose: resetTaskForm
+    });
 
-        if (newTaskButton) {
-            newTaskButton.addEventListener("click", () => openTaskModal());
-        }
-
-        if (closeButton) {
-            closeButton.addEventListener("click", closeTaskModal);
-        }
-
-        if (cancelButton) {
-            cancelButton.addEventListener("click", closeTaskModal);
-        }
-
-        if (modal) {
-            modal.addEventListener("click", (event) => {
-                if (event.target === modal) {
-                    closeTaskModal();
-                }
-            });
-        }
-
-        if (form) {
-            form.addEventListener("submit", handleTaskSubmit);
-        }
-
-        document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && modalState.isOpen) {
-                closeTaskModal();
-            }
-        });
-    }
+    const detailModal = createModal("detail-modal", {
+        closeButtonIds: ["detail-modal-close"],
+        onOpen: fillDetailPanel,
+        onClose: resetDetailPanel
+    });
 
     function render() {
         const board = document.getElementById("board");
@@ -1989,8 +1983,7 @@
         }
     }
 
-    attachModalInteractions();
-    attachDetailInteractions();
+    attachFormInteractions();
     attachFilterInteractions();
     fetchTasks();
 </script>
