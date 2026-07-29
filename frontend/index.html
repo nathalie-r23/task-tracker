@@ -735,6 +735,167 @@
             color: var(--muted);
             font-weight: 400;
         }
+
+        /* --- Search --------------------------------------------------------- */
+        .filter-search {
+            flex: 1 1 200px;
+            min-width: 160px;
+            padding: 7px 14px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--surface);
+            font: inherit;
+            font-size: 0.8125rem;
+            color: var(--text);
+        }
+
+        .filter-search:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .filter-clear {
+            padding: 6px 12px;
+            font-size: 0.8125rem;
+            border-radius: 999px;
+        }
+
+        .filter-clear[hidden] {
+            display: none;
+        }
+
+        /* --- Comments + activity -------------------------------------------- */
+        .comment-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.05);
+            border: 1px solid var(--border-strong);
+            white-space: nowrap;
+        }
+
+        .detail-dialog {
+            width: min(100%, 640px);
+            max-height: 86vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-body {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .detail-heading {
+            margin: 0 0 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .comment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .comment {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            box-shadow: var(--shadow-sm);
+            padding: 10px 12px;
+        }
+
+        .comment-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .comment-author {
+            font-size: 0.8125rem;
+            font-weight: 600;
+        }
+
+        .comment-time,
+        .activity-time {
+            font-size: 0.6875rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .comment-body {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .comment-form {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .comment-textarea {
+            min-height: 72px;
+        }
+
+        .comment-form-footer {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .activity-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .activity-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+            padding: 7px 0;
+            border-bottom: 1px dashed var(--border);
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+        }
+
+        .activity-item:last-child {
+            border-bottom: 0;
+        }
+
+        .activity-item em {
+            color: var(--muted);
+            font-style: italic;
+        }
+
+        .detail-empty {
+            font-size: 0.8125rem;
+            color: var(--muted);
+            padding: 8px 0 4px;
+        }
     </style>
 </head>
 
@@ -752,15 +913,22 @@
 
 <main>
     <div class="toolbar" role="group" aria-label="Board filters">
-        <span class="toolbar-label">Filter</span>
+        <input type="search" id="filter-q" class="filter-search"
+               placeholder="Search title or description" aria-label="Search tasks" />
+        <select id="filter-priority" class="filter-select" aria-label="Filter by priority">
+            <option value="">Any priority</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+        </select>
+        <select id="filter-tag" class="filter-select" aria-label="Filter by tag">
+            <option value="">All tags</option>
+        </select>
         <label class="filter-toggle" for="filter-overdue">
             <input type="checkbox" id="filter-overdue" />
             <span>Overdue only</span>
         </label>
-        <label class="toolbar-label" for="filter-tag">Tag</label>
-        <select id="filter-tag" class="filter-select">
-            <option value="">All tags</option>
-        </select>
+        <button id="clear-filters" class="button button-secondary filter-clear" type="button" hidden>Clear</button>
         <span id="filter-summary" class="filter-count" aria-live="polite"></span>
     </div>
     <section id="board" class="board" aria-live="polite"></section>
@@ -836,6 +1004,35 @@
     </div>
 </div>
 
+<div id="detail-modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+        <div class="modal-header">
+            <h2 id="detail-modal-title">Task</h2>
+            <button id="detail-modal-close" class="modal-close" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="detail-body">
+            <section>
+                <h3 class="detail-heading">Comments</h3>
+                <div id="comment-list" class="comment-list"></div>
+                <form id="comment-form" class="comment-form" novalidate>
+                    <div id="comment-error" class="form-error" role="alert"></div>
+                    <input id="comment-author" class="field-input" type="text"
+                           placeholder="Your name (optional)" aria-label="Comment author" />
+                    <textarea id="comment-body" class="field-textarea comment-textarea"
+                              placeholder="Add a comment…" aria-label="Comment"></textarea>
+                    <div class="comment-form-footer">
+                        <button class="button button-primary" type="submit">Comment</button>
+                    </div>
+                </form>
+            </section>
+            <section>
+                <h3 class="detail-heading">Activity</h3>
+                <ol id="activity-list" class="activity-list"></ol>
+            </section>
+        </div>
+    </div>
+</div>
+
 <script>
     const API_BASE = "http://localhost:8000";
     const STATUSES = ["ToDo", "InProgress", "Done"];
@@ -852,8 +1049,28 @@
     let boardMessage = "";
     let activeDragTaskId = null;
     let modalState = { isOpen: false, mode: "create", taskId: null, originalTask: null };
-    let filterState = { overdue: false, tag: "" };
+    let filterState = { q: "", priority: "", tag: "", overdue: false };
     let knownTags = [];
+    let detailState = { isOpen: false, task: null, comments: [], activity: [] };
+
+    const SEARCH_DEBOUNCE_MS = 250;
+
+    /* Typing fires an input event per keystroke, and each fetch is two requests
+       once a filter is active. Wait for a pause before asking the server. */
+    function debounce(fn, delay) {
+        let timer = null;
+        return function (...args) {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
+    function readJson(response) {
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+        }
+        return response.json();
+    }
 
     /* Task text is user-supplied and gets interpolated into innerHTML, so it has
        to be escaped or a title like `<img onerror=...>` would execute. */
@@ -871,18 +1088,24 @@
        rules the backend tests cover, rather than a second copy of them here. */
     function buildTaskQuery() {
         const params = new URLSearchParams();
-        if (filterState.overdue) {
-            params.set("overdue", "true");
+        if (filterState.q) {
+            params.set("q", filterState.q);
+        }
+        if (filterState.priority) {
+            params.set("priority", filterState.priority);
         }
         if (filterState.tag) {
             params.set("tag", filterState.tag);
+        }
+        if (filterState.overdue) {
+            params.set("overdue", "true");
         }
         const query = params.toString();
         return query ? `?${query}` : "";
     }
 
     function hasActiveFilter() {
-        return Boolean(filterState.overdue || filterState.tag);
+        return Boolean(filterState.q || filterState.priority || filterState.tag || filterState.overdue);
     }
 
     /* "backend, urgent," -> ["backend", "urgent"]. Empty segments from a stray
@@ -902,13 +1125,6 @@
         boardState = "loading";
         boardMessage = "";
         render();
-
-        const readJson = (response) => {
-            if (!response.ok) {
-                throw new Error(`Server returned ${response.status}`);
-            }
-            return response.json();
-        };
 
         /* The board request is filtered, so it cannot also supply the tag
            dropdown — filtering by "backend" would leave "backend" as the only
@@ -1275,9 +1491,17 @@
             .join("");
     }
 
+    function renderCommentBadge(task) {
+        if (!task.comment_count) {
+            return "";
+        }
+        const noun = task.comment_count === 1 ? "comment" : "comments";
+        return `<span class="comment-badge" title="${task.comment_count} ${noun}">&#128172; ${task.comment_count}</span>`;
+    }
+
     function renderTaskCard(task) {
         const priorityClass = task.priority.toLowerCase();
-        const badges = `${renderDuePill(task)}${renderTagChips(task)}`;
+        const badges = `${renderDuePill(task)}${renderTagChips(task)}${renderCommentBadge(task)}`;
         return `
             <article class="task-card ${task.is_overdue ? "is-overdue" : ""}" draggable="true" data-task-id="${escapeHtml(task.id)}">
                 <div class="task-meta">
@@ -1288,11 +1512,243 @@
                 ${badges ? `<div class="card-badges">${badges}</div>` : ""}
                 <div class="task-meta">
                     <div class="card-actions">
+                        <button class="button button-secondary details-button" type="button">Details</button>
                         <button class="button button-secondary edit-button" type="button">Edit</button>
                     </div>
                 </div>
             </article>
         `;
+    }
+
+    /* --- Task details: comments and activity ---------------------------- */
+
+    const FIELD_LABELS = {
+        title: "Title",
+        description: "Description",
+        status: "Status",
+        priority: "Priority",
+        assignee: "Assignee",
+        due_date: "Due date",
+        tags: "Tags"
+    };
+
+    /* Unlike due_date, these are full ISO timestamps carrying an offset, so
+       Date parses them unambiguously. */
+    function formatTimestamp(isoDateTime) {
+        const parsed = new Date(isoDateTime);
+        if (Number.isNaN(parsed.getTime())) {
+            return "";
+        }
+        return parsed.toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+    }
+
+    function renderValue(value) {
+        return value === null || value === undefined || value === ""
+            ? "<em>none</em>"
+            : escapeHtml(value);
+    }
+
+    function describeActivity(entry) {
+        if (entry.kind === "created") {
+            return `Created <strong>${renderValue(entry.to_value)}</strong>`;
+        }
+        if (entry.kind === "commented") {
+            const author = entry.from_value ? escapeHtml(entry.from_value) : "Anonymous";
+            return `<strong>${author}</strong> commented: ${escapeHtml(entry.to_value || "")}`;
+        }
+        const label = FIELD_LABELS[entry.field] || entry.field || "Field";
+        return `${escapeHtml(label)}: ${renderValue(entry.from_value)} &rarr; ${renderValue(entry.to_value)}`;
+    }
+
+    function renderCommentList() {
+        const container = document.getElementById("comment-list");
+        if (!container) {
+            return;
+        }
+
+        if (!detailState.comments.length) {
+            container.innerHTML = `<p class="detail-empty">No comments yet.</p>`;
+            return;
+        }
+
+        container.innerHTML = detailState.comments
+            .map((comment) => `
+                <article class="comment">
+                    <div class="comment-head">
+                        <span class="comment-author">${escapeHtml(comment.author || "Anonymous")}</span>
+                        <span class="comment-time">${escapeHtml(formatTimestamp(comment.created_at))}</span>
+                    </div>
+                    <p class="comment-body">${escapeHtml(comment.body)}</p>
+                </article>
+            `)
+            .join("");
+    }
+
+    function renderActivityList() {
+        const container = document.getElementById("activity-list");
+        if (!container) {
+            return;
+        }
+
+        if (!detailState.activity.length) {
+            container.innerHTML = `<li class="detail-empty">Nothing recorded yet.</li>`;
+            return;
+        }
+
+        container.innerHTML = detailState.activity
+            .map((entry) => `
+                <li class="activity-item">
+                    <span>${describeActivity(entry)}</span>
+                    <span class="activity-time">${escapeHtml(formatTimestamp(entry.at))}</span>
+                </li>
+            `)
+            .join("");
+    }
+
+    function loadDetail(taskId) {
+        return Promise.all([
+            fetch(`${API_BASE}/tasks/${taskId}/comments`).then(readJson),
+            fetch(`${API_BASE}/tasks/${taskId}/activity`).then(readJson)
+        ])
+            .then(([comments, activity]) => {
+                detailState.comments = Array.isArray(comments) ? comments : [];
+                detailState.activity = Array.isArray(activity) ? activity : [];
+                renderCommentList();
+                renderActivityList();
+            })
+            .catch((error) => {
+                console.error(error);
+                showCommentError("Unable to load this task's comments and activity.");
+            });
+    }
+
+    function showCommentError(message) {
+        const box = document.getElementById("comment-error");
+        if (box) {
+            box.textContent = message;
+            box.classList.add("is-visible");
+        }
+    }
+
+    function clearCommentError() {
+        const box = document.getElementById("comment-error");
+        if (box) {
+            box.textContent = "";
+            box.classList.remove("is-visible");
+        }
+    }
+
+    function openDetailModal(task) {
+        const modal = document.getElementById("detail-modal");
+        const title = document.getElementById("detail-modal-title");
+        if (!modal || !title) {
+            return;
+        }
+
+        detailState = { isOpen: true, task, comments: [], activity: [] };
+        title.textContent = task.title;
+        clearCommentError();
+        document.getElementById("comment-form").reset();
+        renderCommentList();
+        renderActivityList();
+
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+
+        loadDetail(task.id);
+    }
+
+    function closeDetailModal() {
+        const modal = document.getElementById("detail-modal");
+        if (modal) {
+            modal.classList.remove("is-open");
+            modal.setAttribute("aria-hidden", "true");
+        }
+        clearCommentError();
+        document.getElementById("comment-form")?.reset();
+        detailState = { isOpen: false, task: null, comments: [], activity: [] };
+        document.body.style.overflow = "";
+    }
+
+    async function handleCommentSubmit(event) {
+        event.preventDefault();
+        clearCommentError();
+
+        const task = detailState.task;
+        const bodyInput = document.getElementById("comment-body");
+        const authorInput = document.getElementById("comment-author");
+        if (!task || !bodyInput.value.trim()) {
+            showCommentError("A comment needs some text.");
+            bodyInput.focus();
+            return;
+        }
+
+        const payload = { body: bodyInput.value.trim() };
+        const author = authorInput.value.trim();
+        if (author) {
+            payload.author = author;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE}/tasks/${task.id}/comments`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorData = {};
+                try {
+                    errorData = await response.json();
+                } catch (error) {
+                    console.error(error);
+                }
+                showCommentError(extractErrorDetails(errorData).message);
+                return;
+            }
+
+            bodyInput.value = "";
+            await loadDetail(task.id);
+            // The card's comment count lives on the task, so the board is stale
+            // until it is refetched.
+            fetchTasks();
+        } catch (error) {
+            showCommentError(error instanceof Error ? error.message : "Unable to post comment.");
+        }
+    }
+
+    function attachDetailInteractions() {
+        const modal = document.getElementById("detail-modal");
+        const closeButton = document.getElementById("detail-modal-close");
+        const form = document.getElementById("comment-form");
+
+        if (closeButton) {
+            closeButton.addEventListener("click", closeDetailModal);
+        }
+
+        if (modal) {
+            modal.addEventListener("click", (event) => {
+                if (event.target === modal) {
+                    closeDetailModal();
+                }
+            });
+        }
+
+        if (form) {
+            form.addEventListener("submit", handleCommentSubmit);
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && detailState.isOpen) {
+                closeDetailModal();
+            }
+        });
     }
 
     function renderColumn(status) {
@@ -1327,18 +1783,23 @@
             column.addEventListener("drop", handleDrop);
         });
 
-        document.querySelectorAll(".edit-button").forEach((button) => {
-            button.addEventListener("click", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const card = button.closest(".task-card");
-                const taskId = card?.getAttribute("data-task-id");
-                const task = tasks.find((item) => String(item.id) === String(taskId));
-                if (task) {
-                    openTaskModal(task);
-                }
+        const onCardButton = (selector, open) => {
+            document.querySelectorAll(selector).forEach((button) => {
+                button.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const card = button.closest(".task-card");
+                    const taskId = card?.getAttribute("data-task-id");
+                    const task = tasks.find((item) => String(item.id) === String(taskId));
+                    if (task) {
+                        open(task);
+                    }
+                });
             });
-        });
+        };
+
+        onCardButton(".edit-button", openTaskModal);
+        onCardButton(".details-button", openDetailModal);
     }
 
     function attachModalInteractions() {
@@ -1435,8 +1896,34 @@
         select.value = filterState.tag;
     }
 
+    /* Describes every active filter, not just how many tasks survived them —
+       "3 tasks" next to an empty-looking board is what makes people think the
+       app has lost their data. */
+    function describeActiveFilters() {
+        const qualifiers = [];
+        if (filterState.q) {
+            qualifiers.push(`matching "${filterState.q}"`);
+        }
+        if (filterState.priority) {
+            qualifiers.push(`${filterState.priority} priority`);
+        }
+        if (filterState.tag) {
+            qualifiers.push(`tagged "${filterState.tag}"`);
+        }
+        if (filterState.overdue) {
+            qualifiers.push("overdue");
+        }
+        return qualifiers.join(", ");
+    }
+
     function renderFilterSummary() {
         const summary = document.getElementById("filter-summary");
+        const clearButton = document.getElementById("clear-filters");
+
+        if (clearButton) {
+            clearButton.hidden = !hasActiveFilter();
+        }
+
         if (!summary) {
             return;
         }
@@ -1447,24 +1934,35 @@
             return;
         }
 
-        const qualifiers = [];
-        if (filterState.overdue) {
-            qualifiers.push("overdue");
-        }
-        if (filterState.tag) {
-            qualifiers.push(`tagged "${filterState.tag}"`);
-        }
-
+        const qualifiers = describeActiveFilters();
         summary.textContent = tasks.length
-            ? `${tasks.length} ${noun} ${qualifiers.join(", ")}`
-            : `No tasks ${qualifiers.join(", ")}`;
+            ? `${tasks.length} ${noun} ${qualifiers}`
+            : `No tasks ${qualifiers}`;
+    }
+
+    function clearFilters() {
+        filterState = { q: "", priority: "", tag: "", overdue: false };
+        document.getElementById("filter-q").value = "";
+        document.getElementById("filter-priority").value = "";
+        document.getElementById("filter-tag").value = "";
+        document.getElementById("filter-overdue").checked = false;
+        fetchTasks();
     }
 
     function attachFilterInteractions() {
-        const overdueToggle = document.getElementById("filter-overdue");
-        if (overdueToggle) {
-            overdueToggle.addEventListener("change", (event) => {
-                filterState.overdue = event.target.checked;
+        const searchInput = document.getElementById("filter-q");
+        if (searchInput) {
+            const runSearch = debounce(fetchTasks, SEARCH_DEBOUNCE_MS);
+            searchInput.addEventListener("input", (event) => {
+                filterState.q = event.target.value;
+                runSearch();
+            });
+        }
+
+        const prioritySelect = document.getElementById("filter-priority");
+        if (prioritySelect) {
+            prioritySelect.addEventListener("change", (event) => {
+                filterState.priority = event.target.value;
                 fetchTasks();
             });
         }
@@ -1476,9 +1974,23 @@
                 fetchTasks();
             });
         }
+
+        const overdueToggle = document.getElementById("filter-overdue");
+        if (overdueToggle) {
+            overdueToggle.addEventListener("change", (event) => {
+                filterState.overdue = event.target.checked;
+                fetchTasks();
+            });
+        }
+
+        const clearButton = document.getElementById("clear-filters");
+        if (clearButton) {
+            clearButton.addEventListener("click", clearFilters);
+        }
     }
 
     attachModalInteractions();
+    attachDetailInteractions();
     attachFilterInteractions();
     fetchTasks();
 </script>
