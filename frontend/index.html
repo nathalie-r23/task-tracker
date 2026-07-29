@@ -599,6 +599,103 @@
             .task-card .card-actions {
                 opacity: 1;
             }
+
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+
+        /* --- Filter toolbar ------------------------------------------------ */
+        .toolbar {
+            max-width: 1280px;
+            margin: 0 auto 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 12px 14px;
+            background: var(--surface-raised);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            backdrop-filter: blur(8px);
+        }
+
+        .toolbar-label {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--muted);
+            letter-spacing: 0.01em;
+        }
+
+        .filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease);
+        }
+
+        .filter-toggle:hover {
+            background: var(--accent-soft);
+        }
+
+        .filter-toggle input {
+            margin: 0;
+            cursor: pointer;
+            accent-color: var(--high);
+        }
+
+        .filter-toggle:has(input:checked) {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.35);
+            color: var(--high);
+        }
+
+        .filter-count {
+            margin-left: auto;
+            font-size: 0.8125rem;
+            color: var(--muted);
+        }
+
+        /* --- Due date + overdue -------------------------------------------- */
+        .card-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .due-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.03);
+            white-space: nowrap;
+        }
+
+        .due-pill.overdue {
+            color: var(--high);
+            border-color: rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .task-card.is-overdue {
+            border-left: 3px solid var(--high);
         }
     </style>
 </head>
@@ -616,6 +713,14 @@
 
 
 <main>
+    <div class="toolbar" role="group" aria-label="Board filters">
+        <span class="toolbar-label">Filter</span>
+        <label class="filter-toggle" for="filter-overdue">
+            <input type="checkbox" id="filter-overdue" />
+            <span>Overdue only</span>
+        </label>
+        <span id="filter-summary" class="filter-count" aria-live="polite"></span>
+    </div>
     <section id="board" class="board" aria-live="polite"></section>
 </main>
 
@@ -668,6 +773,11 @@
                     <input id="assignee" name="assignee" class="field-input" type="text" />
                     <span class="field-error" data-field-error="assignee"></span>
                 </label>
+                <label class="field-group" for="due_date">
+                    <span class="field-label">Due date</span>
+                    <input id="due_date" name="due_date" class="field-input" type="date" />
+                    <span class="field-error" data-field-error="due_date"></span>
+                </label>
             </div>
             <div class="modal-footer">
                 <button id="cancel-task" class="button button-secondary" type="button">Cancel</button>
@@ -686,20 +796,44 @@
         "Done": "Done"
     };
     const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
-    const FORM_FIELDS = ["title", "description", "status", "priority", "assignee"];
+    const FORM_FIELDS = ["title", "description", "status", "priority", "assignee", "due_date"];
 
     let tasks = [];
     let boardState = "loading";
     let boardMessage = "";
     let activeDragTaskId = null;
     let modalState = { isOpen: false, mode: "create", taskId: null, originalTask: null };
+    let filterState = { overdue: false };
+
+    /* Task text is user-supplied and gets interpolated into innerHTML, so it has
+       to be escaped or a title like `<img onerror=...>` would execute. */
+    function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        })[char]);
+    }
+
+    /* Filtering is delegated to the API so the board always reflects the same
+       rules the backend tests cover, rather than a second copy of them here. */
+    function buildTaskQuery() {
+        const params = new URLSearchParams();
+        if (filterState.overdue) {
+            params.set("overdue", "true");
+        }
+        const query = params.toString();
+        return query ? `?${query}` : "";
+    }
 
     function fetchTasks() {
         boardState = "loading";
         boardMessage = "";
         render();
 
-        fetch(`${API_BASE}/tasks`)
+        fetch(`${API_BASE}/tasks${buildTaskQuery()}`)
             .then((response) => {
                 if (!response.ok) {
                     throw new Error(`Server returned ${response.status}`);
@@ -839,6 +973,7 @@
             document.getElementById("status").value = task.status || "ToDo";
             document.getElementById("priority").value = task.priority || "Medium";
             document.getElementById("assignee").value = task.assignee || "";
+            document.getElementById("due_date").value = task.due_date || "";
             taskIdInput.value = task.id || "";
         } else {
             modalTitle.textContent = "New Task";
@@ -939,7 +1074,10 @@
         const statusInput = document.getElementById("status");
         const priorityInput = document.getElementById("priority");
         const assigneeInput = document.getElementById("assignee");
+        const dueDateInput = document.getElementById("due_date");
         const taskId = document.getElementById("taskId").value;
+        // An empty date input means "no due date", which the API expects as null.
+        const dueDateValue = dueDateInput.value === "" ? null : dueDateInput.value;
         const payload = {};
 
         if (!taskId) {
@@ -948,6 +1086,7 @@
             payload.status = statusInput.value;
             payload.priority = priorityInput.value;
             payload.assignee = assigneeInput.value.trim() === "" ? null : assigneeInput.value.trim();
+            payload.due_date = dueDateValue;
         } else {
             const originalTask = modalState.originalTask || null;
             if (trimmedTitle !== (originalTask?.title || "")) {
@@ -972,6 +1111,10 @@
             const assigneeValue = assigneeInput.value.trim() === "" ? null : assigneeInput.value.trim();
             if (assigneeValue !== (originalTask?.assignee ?? null)) {
                 payload.assignee = assigneeValue;
+            }
+
+            if (dueDateValue !== (originalTask?.due_date ?? null)) {
+                payload.due_date = dueDateValue;
             }
         }
 
@@ -1016,15 +1159,39 @@
         }
     }
 
+    /* "2026-07-24" -> "Jul 24". Parsed field-by-field on purpose: passing a bare
+       date string to `new Date()` treats it as UTC midnight, which renders as the
+       previous day for anyone west of Greenwich. */
+    function formatDueDate(isoDate) {
+        const [year, month, day] = String(isoDate).split("-").map(Number);
+        if (!year || !month || !day) {
+            return isoDate;
+        }
+        const local = new Date(year, month - 1, day);
+        return local.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function renderDuePill(task) {
+        if (!task.due_date) {
+            return "";
+        }
+        const label = task.is_overdue
+            ? `Overdue · ${formatDueDate(task.due_date)}`
+            : `Due ${formatDueDate(task.due_date)}`;
+        return `<span class="due-pill ${task.is_overdue ? "overdue" : ""}">${escapeHtml(label)}</span>`;
+    }
+
     function renderTaskCard(task) {
         const priorityClass = task.priority.toLowerCase();
+        const badges = renderDuePill(task);
         return `
-            <article class="task-card" draggable="true" data-task-id="${task.id}">
+            <article class="task-card ${task.is_overdue ? "is-overdue" : ""}" draggable="true" data-task-id="${escapeHtml(task.id)}">
                 <div class="task-meta">
-                    <h3>${task.title}</h3>
-                    <span class="priority-pill ${priorityClass}">${task.priority}</span>
+                    <h3>${escapeHtml(task.title)}</h3>
+                    <span class="priority-pill ${priorityClass}">${escapeHtml(task.priority)}</span>
                 </div>
-                <p>${task.description || "No description"}</p>
+                <p>${escapeHtml(task.description) || "No description"}</p>
+                ${badges ? `<div class="card-badges">${badges}</div>` : ""}
                 <div class="task-meta">
                     <div class="card-actions">
                         <button class="button button-secondary edit-button" type="button">Edit</button>
@@ -1151,9 +1318,37 @@
         const boardMarkup = `${boardMessage ? `<div class="board-message error">${boardMessage}</div>` : ""}${renderBoard()}`;
         board.innerHTML = boardMarkup;
         attachBoardInteractions();
+        renderFilterSummary();
+    }
+
+    function renderFilterSummary() {
+        const summary = document.getElementById("filter-summary");
+        if (!summary) {
+            return;
+        }
+
+        if (!filterState.overdue) {
+            summary.textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+            return;
+        }
+
+        summary.textContent = tasks.length
+            ? `${tasks.length} overdue task${tasks.length === 1 ? "" : "s"}`
+            : "No overdue tasks";
+    }
+
+    function attachFilterInteractions() {
+        const overdueToggle = document.getElementById("filter-overdue");
+        if (overdueToggle) {
+            overdueToggle.addEventListener("change", (event) => {
+                filterState.overdue = event.target.checked;
+                fetchTasks();
+            });
+        }
     }
 
     attachModalInteractions();
+    attachFilterInteractions();
     fetchTasks();
 </script>
 </body>

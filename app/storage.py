@@ -17,6 +17,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
         status=payload.status,
         priority=payload.priority,
         assignee=payload.assignee,
+        due_date=payload.due_date,
         created_at=now,
         updated_at=now,
     )
@@ -24,12 +25,14 @@ def add_task(payload: TaskCreate) -> TaskResponse:
     return task
 
 
-def get_all_tasks(status=None, priority=None) -> list[TaskResponse]:
+def get_all_tasks(status=None, priority=None, overdue=None) -> list[TaskResponse]:
     tasks = list(_tasks.values())
     if status is not None:
         tasks = [t for t in tasks if t.status == status]
     if priority is not None:
         tasks = [t for t in tasks if t.priority == priority]
+    if overdue is not None:
+        tasks = [t for t in tasks if t.is_overdue == overdue]
     return tasks
 
 
@@ -45,7 +48,9 @@ def update_task(task_id: str, payload: TaskUpdate) -> Optional[TaskResponse]:
     if not updates:
         return existing
 
-    updated_data = existing.model_dump()
+    # Only real fields — model_dump() would also emit computed ones such as
+    # is_overdue, which TaskResponse(extra="forbid") then rejects on rebuild.
+    updated_data = {name: getattr(existing, name) for name in TaskResponse.model_fields}
     updated_data.update(updates)
     updated_data["updated_at"] = datetime.now(timezone.utc)
 

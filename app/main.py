@@ -25,12 +25,11 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5500",
-            "http://127.0.0.1:5500",
-            "http://localhost:5173",
-            "null",
-        ],
+        # "null" covers opening frontend/index.html straight from disk (file://).
+        # The regex covers any local static-server port, so the board keeps working
+        # whether it is served on 5500, 5173, or whatever a dev tool picks.
+        allow_origins=["null"],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=False,
@@ -50,8 +49,14 @@ app = create_app()
 def list_tasks(
     status: TaskStatus | None = None,
     priority: TaskPriority | None = None,
+    overdue: bool | None = None,
 ) -> list[TaskResponse]:
-    return storage.get_all_tasks(status=status, priority=priority)
+    """List tasks, optionally narrowed by status, priority and/or overdue state.
+
+    `overdue` is tri-state: omitted returns everything, `true` returns only
+    overdue tasks, `false` returns only tasks that are not overdue.
+    """
+    return storage.get_all_tasks(status=status, priority=priority, overdue=overdue)
 
 
 @app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, tags=["tasks"])
