@@ -1151,71 +1151,60 @@
         return { fieldName: "", message: "Unable to save task." };
     }
 
+    function blankToNull(value) {
+        return value === "" ? null : value;
+    }
+
+    /* One descriptor per editable field: where to read it from the form, and
+       what the API shows for a task that never had a value. Both the create and
+       the edit path walk this list, so a new field is one entry rather than a
+       line in the create branch plus a compare-and-set in the edit branch. */
+    function readEditableFields() {
+        const valueOf = (id) => document.getElementById(id).value;
+        return [
+            { name: "title", value: valueOf("title").trim(), whenAbsent: "" },
+            { name: "description", value: valueOf("description"), whenAbsent: "" },
+            { name: "status", value: valueOf("status"), whenAbsent: "ToDo" },
+            { name: "priority", value: valueOf("priority"), whenAbsent: "Medium" },
+            { name: "assignee", value: blankToNull(valueOf("assignee").trim()), whenAbsent: null },
+            { name: "due_date", value: blankToNull(valueOf("due_date")), whenAbsent: null },
+            { name: "tags", value: parseTagsInput(valueOf("tags")), whenAbsent: [], equals: sameTags }
+        ];
+    }
+
+    function buildCreatePayload(fields) {
+        return Object.fromEntries(fields.map((field) => [field.name, field.value]));
+    }
+
+    /* PATCH is partial, so send only what actually changed. */
+    function buildUpdatePayload(fields, originalTask) {
+        const payload = {};
+        fields.forEach((field) => {
+            const original = originalTask?.[field.name] ?? field.whenAbsent;
+            const equals = field.equals || ((a, b) => a === b);
+            if (!equals(field.value, original)) {
+                payload[field.name] = field.value;
+            }
+        });
+        return payload;
+    }
+
     async function handleTaskSubmit(event) {
         event.preventDefault();
         clearTaskErrors();
 
         const titleInput = document.getElementById("title");
-        const trimmedTitle = titleInput.value.trim();
-        if (!trimmedTitle) {
+        if (!titleInput.value.trim()) {
             showFieldError("title", "Title is required");
             titleInput.focus();
             return;
         }
 
-        const descriptionInput = document.getElementById("description");
-        const statusInput = document.getElementById("status");
-        const priorityInput = document.getElementById("priority");
-        const assigneeInput = document.getElementById("assignee");
-        const dueDateInput = document.getElementById("due_date");
         const taskId = document.getElementById("taskId").value;
-        // An empty date input means "no due date", which the API expects as null.
-        const dueDateValue = dueDateInput.value === "" ? null : dueDateInput.value;
-        const tagsValue = parseTagsInput(document.getElementById("tags").value);
-        const payload = {};
-
-        if (!taskId) {
-            payload.title = trimmedTitle;
-            payload.description = descriptionInput.value === "" ? "" : descriptionInput.value;
-            payload.status = statusInput.value;
-            payload.priority = priorityInput.value;
-            payload.assignee = assigneeInput.value.trim() === "" ? null : assigneeInput.value.trim();
-            payload.due_date = dueDateValue;
-            payload.tags = tagsValue;
-        } else {
-            const originalTask = modalState.originalTask || null;
-            if (trimmedTitle !== (originalTask?.title || "")) {
-                payload.title = trimmedTitle;
-            }
-
-            const descriptionValue = descriptionInput.value === "" ? "" : descriptionInput.value;
-            if (descriptionValue !== (originalTask?.description || "")) {
-                payload.description = descriptionValue;
-            }
-
-            const statusValue = statusInput.value;
-            if (statusValue !== (originalTask?.status || "ToDo")) {
-                payload.status = statusValue;
-            }
-
-            const priorityValue = priorityInput.value;
-            if (priorityValue !== (originalTask?.priority || "Medium")) {
-                payload.priority = priorityValue;
-            }
-
-            const assigneeValue = assigneeInput.value.trim() === "" ? null : assigneeInput.value.trim();
-            if (assigneeValue !== (originalTask?.assignee ?? null)) {
-                payload.assignee = assigneeValue;
-            }
-
-            if (dueDateValue !== (originalTask?.due_date ?? null)) {
-                payload.due_date = dueDateValue;
-            }
-
-            if (!sameTags(tagsValue, originalTask?.tags ?? [])) {
-                payload.tags = tagsValue;
-            }
-        }
+        const fields = readEditableFields();
+        const payload = taskId
+            ? buildUpdatePayload(fields, modalState.originalTask || null)
+            : buildCreatePayload(fields);
 
         if (taskId && Object.keys(payload).length === 0) {
             clearTaskErrors();
