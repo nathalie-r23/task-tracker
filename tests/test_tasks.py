@@ -580,3 +580,141 @@ def test_list_filter_combines_tag_and_overdue(client):
     assert response.status_code == 200
     titles = [t["title"] for t in response.json()]
     assert titles == ["Late backend"]
+
+
+# --- Search (?q=) ---------------------------------------------------------
+
+
+def test_search_matches_title_case_insensitively(client):
+    client.post("/tasks", json={"title": "Ship Release Notes"})
+    client.post("/tasks", json={"title": "Unrelated"})
+
+    response = client.get("/tasks", params={"q": "release"})
+
+    assert response.status_code == 200
+    assert [t["title"] for t in response.json()] == ["Ship Release Notes"]
+
+
+def test_search_matches_a_fragment_inside_a_word(client):
+    client.post("/tasks", json={"title": "Ship release notes"})
+
+    response = client.get("/tasks", params={"q": "eleas"})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_search_matches_description(client):
+    client.post("/tasks", json={"title": "Opaque title", "description": "migrate the database"})
+    client.post("/tasks", json={"title": "Other", "description": "nothing relevant"})
+
+    response = client.get("/tasks", params={"q": "DATABASE"})
+
+    assert response.status_code == 200
+    assert [t["title"] for t in response.json()] == ["Opaque title"]
+
+
+def test_search_does_not_match_assignee(client):
+    client.post("/tasks", json={"title": "Some task", "assignee": "alice"})
+
+    response = client.get("/tasks", params={"q": "alice"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_search_does_not_match_tags(client):
+    client.post("/tasks", json={"title": "Some task", "tags": ["backend"]})
+
+    response = client.get("/tasks", params={"q": "backend"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_search_with_no_matches_returns_200_and_empty_list(client):
+    client.post("/tasks", json={"title": "Ship release notes"})
+
+    response = client.get("/tasks", params={"q": "zzzznope"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_search_with_empty_query_returns_every_task(client):
+    client.post("/tasks", json={"title": "One"})
+    client.post("/tasks", json={"title": "Two"})
+
+    response = client.get("/tasks", params={"q": ""})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_search_with_whitespace_only_query_returns_every_task(client):
+    client.post("/tasks", json={"title": "One"})
+    client.post("/tasks", json={"title": "Two"})
+
+    response = client.get("/tasks", params={"q": "   "})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_search_trims_surrounding_whitespace_from_the_query(client):
+    client.post("/tasks", json={"title": "Ship release notes"})
+
+    response = client.get("/tasks", params={"q": "  release  "})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_search_treats_the_query_as_literal_text_not_a_pattern(client):
+    client.post("/tasks", json={"title": "Ship release notes"})
+    client.post("/tasks", json={"title": "Regex chars .* live here"})
+
+    response = client.get("/tasks", params={"q": ".*"})
+
+    assert response.status_code == 200
+    assert [t["title"] for t in response.json()] == ["Regex chars .* live here"]
+
+
+def test_search_combines_with_tag_and_overdue(client):
+    client.post(
+        "/tasks",
+        json={
+            "title": "Fix api timeout",
+            "tags": ["backend"],
+            "due_date": _days_from_today(-1),
+        },
+    )
+    client.post(
+        "/tasks",
+        json={"title": "Fix api layout", "tags": ["frontend"], "due_date": _days_from_today(-1)},
+    )
+    client.post("/tasks", json={"title": "Fix api docs", "tags": ["backend"]})
+
+    response = client.get("/tasks", params={"q": "api", "tag": "backend", "overdue": "true"})
+
+    assert response.status_code == 200
+    assert [t["title"] for t in response.json()] == ["Fix api timeout"]
+
+
+def test_search_combines_with_priority(client):
+    client.post("/tasks", json={"title": "Urgent api work", "priority": "High"})
+    client.post("/tasks", json={"title": "Calm api work", "priority": "Low"})
+
+    response = client.get("/tasks", params={"q": "api", "priority": "High"})
+
+    assert response.status_code == 200
+    assert [t["title"] for t in response.json()] == ["Urgent api work"]
+
+
+def test_search_handles_tasks_with_no_description(client):
+    client.post("/tasks", json={"title": "Bare task"})
+
+    response = client.get("/tasks", params={"q": "bare"})
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1

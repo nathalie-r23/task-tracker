@@ -26,7 +26,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
     return task
 
 
-def get_all_tasks(status=None, priority=None, overdue=None, tag=None) -> list[TaskResponse]:
+def get_all_tasks(status=None, priority=None, overdue=None, tag=None, q=None) -> list[TaskResponse]:
     tasks = list(_tasks.values())
     if status is not None:
         tasks = [t for t in tasks if t.status == status]
@@ -38,6 +38,15 @@ def get_all_tasks(status=None, priority=None, overdue=None, tag=None) -> list[Ta
         # Case-insensitive so ?tag=bug finds a task tagged "Bug".
         wanted = tag.strip().casefold()
         tasks = [t for t in tasks if any(existing.casefold() == wanted for existing in t.tags)]
+    if q is not None:
+        # Literal substring, not a pattern: ?q=.* looks for the characters ".*".
+        # A blank or whitespace-only term means "no search", not "match nothing".
+        needle = q.strip().casefold()
+        if needle:
+            tasks = [
+                t for t in tasks
+                if needle in t.title.casefold() or needle in t.description.casefold()
+            ]
     return tasks
 
 
