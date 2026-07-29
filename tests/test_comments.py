@@ -1,4 +1,11 @@
+import time
+
 from app import storage
+
+# See tests/test_tasks.py — the wall clock ticks too slowly for a fast request
+# to be observable, so anything asserting a timestamp did *not* move has to
+# wait out a tick first or it passes for the wrong reason.
+CLOCK_TICK_S = 0.05
 
 
 def _task(client, **overrides):
@@ -206,6 +213,9 @@ def test_comment_count_survives_an_unrelated_patch(client):
 
 def test_commenting_does_not_change_the_task_updated_at(client):
     task = _task(client)
+    # Without this the clock would not have moved anyway, so the assertion
+    # below would hold even if commenting *did* stamp the task.
+    time.sleep(CLOCK_TICK_S)
 
     client.post(f"/tasks/{task['id']}/comments", json={"body": "just talking"})
 

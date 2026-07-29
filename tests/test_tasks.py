@@ -1,9 +1,22 @@
+import time
 from datetime import datetime, timedelta, timezone
+
+# Long enough to outlast the system clock's tick. Windows updates the wall
+# clock roughly every 8-16ms, so two calls to datetime.now() either side of a
+# fast request usually return the *same* value — see
+# docs/midcourse/verification.md for the measurement.
+CLOCK_TICK_S = 0.05
 
 
 def _days_from_today(days: int) -> str:
     """ISO date `days` away from today in UTC — matches the server's overdue clock."""
     return (datetime.now(timezone.utc).date() + timedelta(days=days)).isoformat()
+
+
+def _parse(timestamp: str) -> datetime:
+    """Parse the API's ISO timestamps. Compared as datetimes rather than strings
+    because the serialiser omits microseconds when they happen to be zero."""
+    return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
 
 
 def test_create_task_valid_returns_201_with_full_body(client):
@@ -113,7 +126,23 @@ def test_patch_partial_update_keeps_other_fields(client, created_task):
     assert body["priority"] == created_task["priority"]
     assert body["assignee"] == created_task["assignee"]
     assert body["created_at"] == created_task["created_at"]
-    assert body["updated_at"] != created_task["updated_at"]
+    # Ordering only. Whether the clock actually advanced during a sub-millisecond
+    # request is the subject of test_patch_refreshes_updated_at, not this test.
+    assert _parse(body["updated_at"]) >= _parse(created_task["updated_at"])
+
+
+def test_patch_refreshes_updated_at(client, created_task):
+    time.sleep(CLOCK_TICK_S)
+
+    response = client.patch(
+        f"/tasks/{created_task['id']}",
+        json={"description": "updated description"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert _parse(body["updated_at"]) > _parse(created_task["updated_at"])
+    assert body["created_at"] == created_task["created_at"]
 
 
 def test_patch_empty_body_returns_task_unchanged(client, created_task):
