@@ -108,6 +108,63 @@ def test_patch_partial_update_keeps_other_fields(client, created_task):
     assert body["updated_at"] != created_task["updated_at"]
 
 
+def test_patch_empty_body_returns_task_unchanged(client, created_task):
+    task_id = created_task["id"]
+
+    response = client.patch(f"/tasks/{task_id}", json={})
+
+    assert response.status_code == 200
+    assert response.json() == created_task
+
+
+def test_patch_unknown_field_returns_422(client, created_task):
+    task_id = created_task["id"]
+
+    response = client.patch(f"/tasks/{task_id}", json={"foo": "bar"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail[0]["type"] == "extra_forbidden"
+    assert detail[0]["loc"] == ["body", "foo"]
+
+
+def test_patch_blank_title_returns_422(client, created_task):
+    task_id = created_task["id"]
+
+    response = client.patch(f"/tasks/{task_id}", json={"title": "   "})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail[0]["loc"] == ["body", "title"]
+    assert "title must not be blank" in detail[0]["msg"]
+
+
+def test_patch_invalid_priority_returns_422(client, created_task):
+    task_id = created_task["id"]
+
+    response = client.patch(f"/tasks/{task_id}", json={"priority": "Urgent"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail[0]["loc"] == ["body", "priority"]
+    assert detail[0]["type"] == "enum"
+
+
+def test_patch_malformed_json_returns_422(client, created_task):
+    task_id = created_task["id"]
+
+    response = client.patch(
+        f"/tasks/{task_id}",
+        content="{invalid",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail[0]["type"] == "json_invalid"
+    assert "JSON decode error" in detail[0]["msg"]
+
+
 def test_patch_not_found_returns_404(client):
     response = client.patch("/tasks/nonexistent-id", json={"title": "Nope"})
 
@@ -124,6 +181,16 @@ def test_patch_valid_transition_todo_to_inprogress_returns_200(client, created_t
     assert response.json()["status"] == "InProgress"
 
 
+def test_patch_valid_transition_inprogress_to_done_returns_200(client, created_task):
+    task_id = created_task["id"]
+    client.patch(f"/tasks/{task_id}", json={"status": "InProgress"})
+
+    response = client.patch(f"/tasks/{task_id}", json={"status": "Done"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Done"
+
+
 def test_patch_invalid_transition_todo_to_done_returns_422(client, created_task):
     task_id = created_task["id"]
 
@@ -133,13 +200,13 @@ def test_patch_invalid_transition_todo_to_done_returns_422(client, created_task)
     assert "Invalid status transition from ToDo to Done" in response.json()["detail"]
 
 
-def test_patch_same_status_returns_422(client, created_task):
+def test_patch_same_status_returns_200(client, created_task):
     task_id = created_task["id"]
 
     response = client.patch(f"/tasks/{task_id}", json={"status": "ToDo"})
 
-    assert response.status_code == 422
-    assert "Invalid status transition from ToDo to ToDo" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["status"] == "ToDo"
 
 
 def test_delete_existing_returns_204_no_body(client, created_task):
