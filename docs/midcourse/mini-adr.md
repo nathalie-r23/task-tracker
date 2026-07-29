@@ -1,4 +1,4 @@
-# Mini-ADR — Due Dates and Tags
+# Mini-ADR — Due Dates, Tags, Search, Comments
 
 **Status:** accepted · **Branch:** `mid-course-project` · **Baseline:** 24 tests passing at `18a2672`
 
@@ -6,13 +6,17 @@ Decision note written before implementation and updated with what actually
 shipped. It records the choices that had real alternatives, and the suggestions
 that were turned down as too big for the module.
 
+Decisions 1–6 cover the two features the brief asks for (due dates, tags).
+Decisions 7–13 cover the two built afterwards (search, comments + activity) and
+were written before that code existed, same as the first six.
+
 ---
 
 ## Context
 
 The Task Tracker is a FastAPI backend with an in-memory store and a single-file
 Kanban frontend. Tasks already had title, description, status, priority and
-assignee, plus a status-transition rule. Two features were added end to end.
+assignee, plus a status-transition rule. Four features were added end to end.
 
 ---
 
@@ -90,6 +94,94 @@ filter is active the frontend issues a second, unfiltered request purely for the
 tag list. Two requests where one would do, in exchange for a filter you can back
 out of.
 
+## Decision 7 — Search is a query parameter, not an endpoint
+
+`GET /tasks?q=...` rather than `GET /tasks/search?q=...`.
+
+**Alternative rejected — a dedicated search endpoint.** It would have had to
+re-declare `status`, `priority`, `overdue` and `tag` to stay useful, leaving two
+routes with the same filter logic to keep in step — or it would have refused to
+combine, making "overdue backend tasks mentioning migration" unexpressible. `q`
+joins the existing AND chain and costs one parameter.
+
+**Alternative rejected — filtering the fetched array in the browser.** Same
+argument as Decision 3. The board would be right and the API would not.
+
+## Decision 8 — Search covers title and description, and nothing else
+
+Case-insensitive substring against `title` **or** `description`.
+
+**Alternative rejected — searching assignee and tags too.** The assistant's
+default. It makes results unexplainable: typing `backend` returns tasks that
+merely carry a `backend` tag, silently duplicating the dropdown next to the
+search box. Free-text search over free-text fields; structured fields get
+structured filters.
+
+**Alternative rejected — tokenising the query and ORing the words.** `pay api`
+would then match everything containing `api`, which reads as a bug to anyone who
+meant the phrase. The term is matched literally, including punctuation, so `.*`
+searches for the characters `.*` and not a regex.
+
+**Boundary pinned:** `q` is stripped, and empty-after-stripping means *no
+filter*. Otherwise `?q=%20` would match nothing and look broken.
+
+## Decision 9 — Activity is stored; it cannot be derived
+
+`is_overdue` is computed on read because current state is enough to know it.
+History is not recoverable from current state, so activity entries are written at
+the moment of the change and kept.
+
+## Decision 10 — One activity entry per changed field
+
+A `PATCH` that changes priority and due date writes two entries, each naming the
+field, the old value and the new one.
+
+**Alternative rejected — one entry per request holding a dict of changes.** The
+assistant's first version. The timeline then renders as JSON blobs, and "when did
+the priority last change?" requires the reader — or a query — to open every
+entry. Per-field entries render as sentences and are filterable by field for
+free. The cost is more rows, which for an in-memory learning project is nothing.
+
+## Decision 11 — Activity is recorded in the storage layer
+
+`storage.update_task` is the only place that sees the task before and after the
+change. Recording in the route would mean re-reading the task first and keeping
+the diff logic in step with storage.
+
+**Consequence:** values are heterogeneous — dates, enums, lists, long strings —
+so they are stringified for the log (`_describe`), enums by `.value`, dates by
+`.isoformat()`, tag lists comma-joined, empty as `null`. Values are truncated at
+80 characters so pasting an essay into a description does not put a copy of it in
+the log twice.
+
+## Decision 12 — Comments are append-only
+
+`POST` and `GET`. No edit, no delete.
+
+**Alternative rejected — full comment CRUD.** Deleting a comment immediately
+raises "does the `commented` activity entry go too?", and if it does the log
+lies, and if it does not the log points at nothing. That is a real design
+question and a bigger one than the feature warrants here. Append-only has no such
+question, and the limitation is honest rather than hidden.
+
+## Decision 13 — `comment_count` is derived at read, but is a plain field
+
+Every storage read stamps `comment_count` from the comment store before returning
+a task, so it cannot drift from the actual number of comments.
+
+**Why not a `@computed_field` like `is_overdue`?** `is_overdue` is a pure
+function of two fields the model already holds. `comment_count` needs the comment
+store, and a model reaching into storage would invert the dependency — storage
+imports models today, not the other way round. So the derivation lives in storage
+and the model just carries the number.
+
+**Alternative rejected — incrementing a stored counter when a comment is added.**
+One more thing to keep correct, and it goes wrong silently. Deriving it is O(1)
+against a per-task index and cannot be wrong.
+
+**Alternative rejected — letting the frontend count.** That is one extra request
+per card on every board load.
+
 ---
 
 ## Changes made in passing
@@ -108,4 +200,7 @@ out of.
 
 Recurring due dates · reminders and notifications · tag rename/merge · tag
 colours · per-user "my overdue tasks" · saved filter presets · bulk re-tagging ·
-timezone-aware per-user overdue calculation.
+timezone-aware per-user overdue calculation · fuzzy or ranked search · search
+result highlighting · pagination · comment editing and deletion · threaded
+replies · @mentions · a board-wide activity feed · real users and authentication
+(comment authors are free text, and the API has no identity of any kind).
