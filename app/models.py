@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class TaskStatus(str, Enum):
@@ -24,6 +24,35 @@ def _validate_title(value: str) -> str:
     if len(stripped) > 200:
         raise ValueError("title must be at most 200 characters")
     return stripped
+
+
+MAX_TAGS = 10
+MAX_TAG_LENGTH = 24
+
+
+def _validate_tags(values: list[str]) -> list[str]:
+    """Trim, reject blanks/overlong tags, and drop case-insensitive duplicates.
+
+    Deduplication keeps the first spelling the user typed, so ["Bug", "bug"]
+    stores as ["Bug"] rather than inventing a canonical casing they never used.
+    """
+    if len(values) > MAX_TAGS:
+        raise ValueError(f"at most {MAX_TAGS} tags allowed")
+
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("tags must not be blank")
+        if len(stripped) > MAX_TAG_LENGTH:
+            raise ValueError(f"each tag must be at most {MAX_TAG_LENGTH} characters")
+        key = stripped.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(stripped)
+    return cleaned
 
 
 def today_utc() -> date:
@@ -61,11 +90,17 @@ class TaskCreate(BaseModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     assignee: Optional[str] = None
     due_date: Optional[date] = None
+    tags: list[str] = Field(default_factory=list)
 
     @field_validator("title")
     @classmethod
     def validate_title(cls, value: str) -> str:
         return _validate_title(value)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, values: list[str]) -> list[str]:
+        return _validate_tags(values)
 
 
 class TaskUpdate(BaseModel):
@@ -77,6 +112,7 @@ class TaskUpdate(BaseModel):
     priority: Optional[TaskPriority] = None
     assignee: Optional[str] = None
     due_date: Optional[date] = None
+    tags: Optional[list[str]] = None
 
     @field_validator("title")
     @classmethod
@@ -84,6 +120,15 @@ class TaskUpdate(BaseModel):
         if value is None:
             return value
         return _validate_title(value)
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, values: Optional[list[str]]) -> list[str]:
+        # An explicit `"tags": null` means "remove them all"; tags are never null
+        # on a stored task, only empty. Omitting the key leaves them untouched.
+        if values is None:
+            return []
+        return _validate_tags(values)
 
 
 class TaskResponse(BaseModel):
@@ -96,6 +141,7 @@ class TaskResponse(BaseModel):
     priority: TaskPriority
     assignee: Optional[str]
     due_date: Optional[date] = None
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

@@ -18,6 +18,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
         priority=payload.priority,
         assignee=payload.assignee,
         due_date=payload.due_date,
+        tags=payload.tags,
         created_at=now,
         updated_at=now,
     )
@@ -25,7 +26,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
     return task
 
 
-def get_all_tasks(status=None, priority=None, overdue=None) -> list[TaskResponse]:
+def get_all_tasks(status=None, priority=None, overdue=None, tag=None) -> list[TaskResponse]:
     tasks = list(_tasks.values())
     if status is not None:
         tasks = [t for t in tasks if t.status == status]
@@ -33,6 +34,10 @@ def get_all_tasks(status=None, priority=None, overdue=None) -> list[TaskResponse
         tasks = [t for t in tasks if t.priority == priority]
     if overdue is not None:
         tasks = [t for t in tasks if t.is_overdue == overdue]
+    if tag is not None:
+        # Case-insensitive so ?tag=bug finds a task tagged "Bug".
+        wanted = tag.strip().casefold()
+        tasks = [t for t in tasks if any(existing.casefold() == wanted for existing in t.tags)]
     return tasks
 
 

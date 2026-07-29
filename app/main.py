@@ -50,13 +50,15 @@ def list_tasks(
     status: TaskStatus | None = None,
     priority: TaskPriority | None = None,
     overdue: bool | None = None,
+    tag: str | None = None,
 ) -> list[TaskResponse]:
-    """List tasks, optionally narrowed by status, priority and/or overdue state.
+    """List tasks, optionally narrowed by status, priority, overdue state and/or tag.
 
     `overdue` is tri-state: omitted returns everything, `true` returns only
-    overdue tasks, `false` returns only tasks that are not overdue.
+    overdue tasks, `false` returns only tasks that are not overdue. `tag`
+    matches case-insensitively. All filters combine with AND.
     """
-    return storage.get_all_tasks(status=status, priority=priority, overdue=overdue)
+    return storage.get_all_tasks(status=status, priority=priority, overdue=overdue, tag=tag)
 
 
 @app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, tags=["tasks"])

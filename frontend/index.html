@@ -697,6 +697,44 @@
         .task-card.is-overdue {
             border-left: 3px solid var(--high);
         }
+
+        /* --- Tags ----------------------------------------------------------- */
+        .tag-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            color: var(--accent);
+            background: var(--accent-soft);
+            border: 1px solid rgba(99, 102, 241, 0.22);
+            white-space: nowrap;
+        }
+
+        .filter-select {
+            padding: 7px 12px;
+            border: 1px solid var(--border-strong);
+            border-radius: 999px;
+            background: var(--surface);
+            font: inherit;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .filter-select:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+        }
+
+        .field-hint {
+            font-size: 0.75rem;
+            color: var(--muted);
+            font-weight: 400;
+        }
     </style>
 </head>
 
@@ -719,6 +757,10 @@
             <input type="checkbox" id="filter-overdue" />
             <span>Overdue only</span>
         </label>
+        <label class="toolbar-label" for="filter-tag">Tag</label>
+        <select id="filter-tag" class="filter-select">
+            <option value="">All tags</option>
+        </select>
         <span id="filter-summary" class="filter-count" aria-live="polite"></span>
     </div>
     <section id="board" class="board" aria-live="polite"></section>
@@ -779,6 +821,13 @@
                     <span class="field-error" data-field-error="due_date"></span>
                 </label>
             </div>
+            <div class="form-row">
+                <label class="field-group" for="tags">
+                    <span class="field-label">Tags <span class="field-hint">— comma separated, up to 10</span></span>
+                    <input id="tags" name="tags" class="field-input" type="text" placeholder="backend, urgent" />
+                    <span class="field-error" data-field-error="tags"></span>
+                </label>
+            </div>
             <div class="modal-footer">
                 <button id="cancel-task" class="button button-secondary" type="button">Cancel</button>
                 <button class="button button-primary" type="submit">Save Task</button>
@@ -796,14 +845,15 @@
         "Done": "Done"
     };
     const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
-    const FORM_FIELDS = ["title", "description", "status", "priority", "assignee", "due_date"];
+    const FORM_FIELDS = ["title", "description", "status", "priority", "assignee", "due_date", "tags"];
 
     let tasks = [];
     let boardState = "loading";
     let boardMessage = "";
     let activeDragTaskId = null;
     let modalState = { isOpen: false, mode: "create", taskId: null, originalTask: null };
-    let filterState = { overdue: false };
+    let filterState = { overdue: false, tag: "" };
+    let knownTags = [];
 
     /* Task text is user-supplied and gets interpolated into innerHTML, so it has
        to be escaped or a title like `<img onerror=...>` would execute. */
@@ -824,8 +874,28 @@
         if (filterState.overdue) {
             params.set("overdue", "true");
         }
+        if (filterState.tag) {
+            params.set("tag", filterState.tag);
+        }
         const query = params.toString();
         return query ? `?${query}` : "";
+    }
+
+    function hasActiveFilter() {
+        return Boolean(filterState.overdue || filterState.tag);
+    }
+
+    /* "backend, urgent," -> ["backend", "urgent"]. Empty segments from a stray
+       trailing comma are dropped here rather than sent on to be rejected. */
+    function parseTagsInput(value) {
+        return value
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter((tag) => tag !== "");
+    }
+
+    function sameTags(a, b) {
+        return a.length === b.length && a.every((tag, index) => tag === b[index]);
     }
 
     function fetchTasks() {
@@ -833,15 +903,25 @@
         boardMessage = "";
         render();
 
-        fetch(`${API_BASE}/tasks${buildTaskQuery()}`)
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`Server returned ${response.status}`);
-                }
-                return response.json();
-            })
-            .then((data) => {
+        const readJson = (response) => {
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}`);
+            }
+            return response.json();
+        };
+
+        /* The board request is filtered, so it cannot also supply the tag
+           dropdown — filtering by "backend" would leave "backend" as the only
+           option. When a filter is on, ask separately for the full list. */
+        const board = fetch(`${API_BASE}/tasks${buildTaskQuery()}`).then(readJson);
+        const vocabulary = hasActiveFilter()
+            ? fetch(`${API_BASE}/tasks`).then(readJson)
+            : board;
+
+        Promise.all([board, vocabulary])
+            .then(([data, all]) => {
                 tasks = Array.isArray(data) ? data : [];
+                knownTags = collectTags(Array.isArray(all) ? all : []);
                 boardState = "ready";
                 render();
             })
@@ -850,6 +930,18 @@
                 boardState = "error";
                 render();
             });
+    }
+
+    function collectTags(allTasks) {
+        const byLowercase = new Map();
+        allTasks.forEach((task) => {
+            (task.tags || []).forEach((tag) => {
+                if (!byLowercase.has(tag.toLowerCase())) {
+                    byLowercase.set(tag.toLowerCase(), tag);
+                }
+            });
+        });
+        return [...byLowercase.values()].sort((a, b) => a.localeCompare(b));
     }
 
     function compareTasks(a, b) {
@@ -974,6 +1066,7 @@
             document.getElementById("priority").value = task.priority || "Medium";
             document.getElementById("assignee").value = task.assignee || "";
             document.getElementById("due_date").value = task.due_date || "";
+            document.getElementById("tags").value = (task.tags || []).join(", ");
             taskIdInput.value = task.id || "";
         } else {
             modalTitle.textContent = "New Task";
@@ -1078,6 +1171,7 @@
         const taskId = document.getElementById("taskId").value;
         // An empty date input means "no due date", which the API expects as null.
         const dueDateValue = dueDateInput.value === "" ? null : dueDateInput.value;
+        const tagsValue = parseTagsInput(document.getElementById("tags").value);
         const payload = {};
 
         if (!taskId) {
@@ -1087,6 +1181,7 @@
             payload.priority = priorityInput.value;
             payload.assignee = assigneeInput.value.trim() === "" ? null : assigneeInput.value.trim();
             payload.due_date = dueDateValue;
+            payload.tags = tagsValue;
         } else {
             const originalTask = modalState.originalTask || null;
             if (trimmedTitle !== (originalTask?.title || "")) {
@@ -1115,6 +1210,10 @@
 
             if (dueDateValue !== (originalTask?.due_date ?? null)) {
                 payload.due_date = dueDateValue;
+            }
+
+            if (!sameTags(tagsValue, originalTask?.tags ?? [])) {
+                payload.tags = tagsValue;
             }
         }
 
@@ -1181,9 +1280,15 @@
         return `<span class="due-pill ${task.is_overdue ? "overdue" : ""}">${escapeHtml(label)}</span>`;
     }
 
+    function renderTagChips(task) {
+        return (task.tags || [])
+            .map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`)
+            .join("");
+    }
+
     function renderTaskCard(task) {
         const priorityClass = task.priority.toLowerCase();
-        const badges = renderDuePill(task);
+        const badges = `${renderDuePill(task)}${renderTagChips(task)}`;
         return `
             <article class="task-card ${task.is_overdue ? "is-overdue" : ""}" draggable="true" data-task-id="${escapeHtml(task.id)}">
                 <div class="task-meta">
@@ -1318,7 +1423,27 @@
         const boardMarkup = `${boardMessage ? `<div class="board-message error">${boardMessage}</div>` : ""}${renderBoard()}`;
         board.innerHTML = boardMarkup;
         attachBoardInteractions();
+        renderTagFilterOptions();
         renderFilterSummary();
+    }
+
+    function renderTagFilterOptions() {
+        const select = document.getElementById("filter-tag");
+        if (!select) {
+            return;
+        }
+
+        // Keep the active tag selectable even if nothing currently matches it,
+        // otherwise the dropdown would silently reset itself to "All tags".
+        const options = [...knownTags];
+        if (filterState.tag && !options.some((tag) => tag === filterState.tag)) {
+            options.push(filterState.tag);
+        }
+
+        select.innerHTML = `<option value="">All tags</option>` + options
+            .map((tag) => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`)
+            .join("");
+        select.value = filterState.tag;
     }
 
     function renderFilterSummary() {
@@ -1327,14 +1452,23 @@
             return;
         }
 
-        if (!filterState.overdue) {
-            summary.textContent = `${tasks.length} task${tasks.length === 1 ? "" : "s"}`;
+        const noun = `task${tasks.length === 1 ? "" : "s"}`;
+        if (!hasActiveFilter()) {
+            summary.textContent = `${tasks.length} ${noun}`;
             return;
         }
 
+        const qualifiers = [];
+        if (filterState.overdue) {
+            qualifiers.push("overdue");
+        }
+        if (filterState.tag) {
+            qualifiers.push(`tagged "${filterState.tag}"`);
+        }
+
         summary.textContent = tasks.length
-            ? `${tasks.length} overdue task${tasks.length === 1 ? "" : "s"}`
-            : "No overdue tasks";
+            ? `${tasks.length} ${noun} ${qualifiers.join(", ")}`
+            : `No tasks ${qualifiers.join(", ")}`;
     }
 
     function attachFilterInteractions() {
@@ -1342,6 +1476,14 @@
         if (overdueToggle) {
             overdueToggle.addEventListener("change", (event) => {
                 filterState.overdue = event.target.checked;
+                fetchTasks();
+            });
+        }
+
+        const tagSelect = document.getElementById("filter-tag");
+        if (tagSelect) {
+            tagSelect.addEventListener("change", (event) => {
+                filterState.tag = event.target.value;
                 fetchTasks();
             });
         }
