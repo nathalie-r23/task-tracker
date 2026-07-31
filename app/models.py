@@ -205,6 +205,7 @@ class ActivityKind(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
     COMMENTED = "commented"
+    DELETED = "deleted"
 
 
 MAX_ACTIVITY_VALUE_LENGTH = 80
@@ -243,6 +244,11 @@ class ActivityEntry(BaseModel):
 
     id: str
     task_id: str
+    # Snapshot of the task's title when the event happened, not a live lookup.
+    # The board-wide feed outlives the tasks in it, so an entry for a deleted
+    # task still has to say what it was called. A rename therefore leaves older
+    # entries under the old name — which is what actually happened at the time.
+    task_title: str
     kind: ActivityKind
     # `field` is set for `updated` entries only; `to_value` carries a preview of
     # the comment for `commented` entries.

@@ -896,6 +896,56 @@
             color: var(--muted);
             padding: 8px 0 4px;
         }
+
+        /* --- Board-wide activity feed --------------------------------------- */
+        .feed-task {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .activity-item.is-deleted .feed-task {
+            text-decoration: line-through;
+            color: var(--muted);
+        }
+
+        .activity-kind {
+            display: inline-block;
+            min-width: 74px;
+            font-size: 0.6875rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .activity-kind.created { color: var(--low); }
+        .activity-kind.updated { color: var(--progress); }
+        .activity-kind.commented { color: var(--accent); }
+        .activity-kind.deleted { color: var(--high); }
+
+        .feed-note {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin: 0 0 10px;
+        }
+
+        .button-danger {
+            border-color: rgba(239, 68, 68, 0.3);
+            background: var(--surface);
+            color: var(--high);
+            margin-right: auto;
+        }
+
+        .button-danger:hover {
+            background: rgba(239, 68, 68, 0.08);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        .button-danger.is-confirming {
+            background: var(--high);
+            border-color: var(--high);
+            color: #ffffff;
+        }
     </style>
 </head>
 
@@ -906,6 +956,7 @@
             <p>Drag tasks between columns to update their status.</p>
         </div>
         <div class="app-header-actions">
+            <button id="activity-button" class="button button-secondary" type="button">Activity</button>
             <button id="new-task-button" class="button button-primary" type="button">New Task</button>
         </div>
     </header>
@@ -997,10 +1048,24 @@
                 </label>
             </div>
             <div class="modal-footer">
+                <button id="delete-task" class="button button-danger" type="button" hidden>Delete</button>
                 <button id="cancel-task" class="button button-secondary" type="button">Cancel</button>
                 <button class="button button-primary" type="submit">Save Task</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div id="feed-modal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal-dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="feed-modal-title">
+        <div class="modal-header">
+            <h2 id="feed-modal-title">Recent activity</h2>
+            <button id="feed-modal-close" class="modal-close" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="detail-body">
+            <p class="feed-note">Everything that has happened across the board, newest first.</p>
+            <ol id="feed-list" class="activity-list"></ol>
+        </div>
     </div>
 </div>
 
@@ -1342,6 +1407,10 @@
             document.getElementById("status").value = "ToDo";
             document.getElementById("priority").value = "Medium";
         }
+
+        // Only an existing task can be deleted.
+        document.getElementById("delete-task").hidden = !task;
+        resetDeleteButton();
     }
 
     function resetTaskForm() {
@@ -1351,7 +1420,51 @@
             form.reset();
             document.getElementById("taskId").value = "";
         }
+        resetDeleteButton();
         modalState = { mode: "create", taskId: null, originalTask: null };
+    }
+
+    let deleteArmed = false;
+
+    function resetDeleteButton() {
+        const button = document.getElementById("delete-task");
+        if (!button) {
+            return;
+        }
+        deleteArmed = false;
+        button.textContent = "Delete";
+        button.classList.remove("is-confirming");
+    }
+
+    /* Two clicks rather than confirm(): a native dialog blocks the page, and
+       cannot be driven by the DOM-level checks used to verify this board. */
+    async function handleDeleteTask() {
+        const button = document.getElementById("delete-task");
+        const taskId = document.getElementById("taskId").value;
+        if (!taskId) {
+            return;
+        }
+
+        if (!deleteArmed) {
+            deleteArmed = true;
+            button.textContent = "Really delete?";
+            button.classList.add("is-confirming");
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE}/tasks/${taskId}`, { method: "DELETE" });
+            if (!response.ok) {
+                showFormError(`Server returned ${response.status}`);
+                resetDeleteButton();
+                return;
+            }
+            closeTaskModal();
+            fetchTasks();
+        } catch (error) {
+            showFormError(error instanceof Error ? error.message : "Unable to delete task.");
+            resetDeleteButton();
+        }
     }
 
     function openTaskModal(task = null) {
@@ -1603,9 +1716,14 @@
             : escapeHtml(value);
     }
 
+    /* The task's name is not repeated here: the details panel already shows it
+       in the dialog header. The board-wide feed prepends it separately. */
     function describeActivity(entry) {
         if (entry.kind === "created") {
-            return `Created <strong>${renderValue(entry.to_value)}</strong>`;
+            return "Task created";
+        }
+        if (entry.kind === "deleted") {
+            return "Task deleted";
         }
         if (entry.kind === "commented") {
             const author = entry.from_value ? escapeHtml(entry.from_value) : "Anonymous";
@@ -1658,6 +1776,52 @@
                 </li>
             `)
             .join("");
+    }
+
+    /* --- Board-wide activity feed --------------------------------------- */
+
+    function renderFeedList(entries) {
+        const container = document.getElementById("feed-list");
+        if (!container) {
+            return;
+        }
+
+        if (!entries.length) {
+            container.innerHTML = `<li class="detail-empty">Nothing has happened yet.</li>`;
+            return;
+        }
+
+        container.innerHTML = entries
+            .map((entry) => `
+                <li class="activity-item ${entry.kind === "deleted" ? "is-deleted" : ""}">
+                    <span>
+                        <span class="activity-kind ${escapeHtml(entry.kind)}">${escapeHtml(entry.kind)}</span>
+                        <span class="feed-task">${escapeHtml(entry.task_title)}</span>
+                        &middot; ${describeActivity(entry)}
+                    </span>
+                    <span class="activity-time">${escapeHtml(formatTimestamp(entry.at))}</span>
+                </li>
+            `)
+            .join("");
+    }
+
+    function loadFeed() {
+        renderFeedList([]);
+        return fetch(`${API_BASE}/activity`)
+            .then(readJson)
+            .then((entries) => renderFeedList(Array.isArray(entries) ? entries : []))
+            .catch((error) => {
+                console.error(error);
+                const container = document.getElementById("feed-list");
+                if (container) {
+                    container.innerHTML = `<li class="detail-empty">Unable to load activity.</li>`;
+                }
+            });
+    }
+
+    function openFeedModal() {
+        feedModal.open();
+        loadFeed();
     }
 
     function loadDetail(taskId) {
@@ -1767,7 +1931,9 @@
 
     function attachFormInteractions() {
         document.getElementById("new-task-button")?.addEventListener("click", () => openTaskModal());
+        document.getElementById("activity-button")?.addEventListener("click", openFeedModal);
         document.getElementById("task-form")?.addEventListener("submit", handleTaskSubmit);
+        document.getElementById("delete-task")?.addEventListener("click", handleDeleteTask);
         document.getElementById("comment-form")?.addEventListener("submit", handleCommentSubmit);
     }
 
@@ -1832,6 +1998,10 @@
         closeButtonIds: ["detail-modal-close"],
         onOpen: fillDetailPanel,
         onClose: resetDetailPanel
+    });
+
+    const feedModal = createModal("feed-modal", {
+        closeButtonIds: ["feed-modal-close"]
     });
 
     function render() {

@@ -27,7 +27,7 @@ def test_creating_a_task_records_a_created_entry(client):
     assert len(entries) == 1
     assert entries[0]["kind"] == "created"
     assert entries[0]["task_id"] == task["id"]
-    assert entries[0]["to_value"] == "Ship it"
+    assert entries[0]["task_title"] == "Ship it"
     assert entries[0]["field"] is None
 
 
@@ -162,6 +162,109 @@ def test_commenting_records_a_commented_entry(client):
     assert entry["field"] is None
 
 
+# --- Board-wide feed (GET /activity) --------------------------------------
+
+
+def test_feed_returns_entries_from_every_task_newest_first(client):
+    first = _task(client, title="First")
+    second = _task(client, title="Second")
+    client.patch(f"/tasks/{first['id']}", json={"priority": "High"})
+
+    feed = client.get("/activity").json()
+
+    assert [(e["kind"], e["task_title"]) for e in feed] == [
+        ("updated", "First"),
+        ("created", "Second"),
+        ("created", "First"),
+    ]
+
+
+def test_feed_is_empty_before_anything_happens(client):
+    response = client.get("/activity")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_feed_can_be_filtered_by_kind(client):
+    task = _task(client)
+    client.patch(f"/tasks/{task['id']}", json={"priority": "High"})
+    client.post(f"/tasks/{task['id']}/comments", json={"body": "hi"})
+
+    feed = client.get("/activity", params={"kind": "updated"}).json()
+
+    assert [e["kind"] for e in feed] == ["updated"]
+
+
+def test_feed_rejects_an_unknown_kind(client):
+    response = client.get("/activity", params={"kind": "exploded"})
+
+    assert response.status_code == 422
+
+
+def test_feed_can_be_filtered_by_task(client):
+    first = _task(client, title="First")
+    _task(client, title="Second")
+
+    feed = client.get("/activity", params={"task_id": first["id"]}).json()
+
+    assert [e["task_title"] for e in feed] == ["First"]
+
+
+def test_feed_for_an_unknown_task_returns_empty_not_404(client):
+    response = client.get("/activity", params={"task_id": "does-not-exist"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_feed_honours_the_limit(client):
+    task = _task(client)
+    for priority in ["High", "Low", "Medium", "High"]:
+        client.patch(f"/tasks/{task['id']}", json={"priority": priority})
+
+    feed = client.get("/activity", params={"limit": 2}).json()
+
+    assert len(feed) == 2
+    # Newest kept, not the first two written.
+    assert feed[0]["to_value"] == "High"
+
+
+def test_feed_defaults_to_fifty_entries(client):
+    task = _task(client)
+    for index in range(60):
+        client.patch(f"/tasks/{task['id']}", json={"title": f"rename {index}"})
+
+    assert len(client.get("/activity").json()) == 50
+
+
+def test_feed_rejects_a_limit_outside_the_allowed_range(client):
+    assert client.get("/activity", params={"limit": 0}).status_code == 422
+    assert client.get("/activity", params={"limit": 201}).status_code == 422
+
+
+def test_feed_records_the_title_as_it_was_at_the_time(client):
+    task = _task(client, title="Old name")
+    client.patch(f"/tasks/{task['id']}", json={"title": "New name"})
+
+    feed = client.get("/activity").json()
+
+    # The rename entry is filed under the new name; the creation keeps the old.
+    assert feed[0]["task_title"] == "New name"
+    assert feed[-1]["task_title"] == "Old name"
+
+
+def test_status_change_appears_on_the_feed_with_from_and_to(client):
+    task = _task(client)
+
+    client.patch(f"/tasks/{task['id']}", json={"status": "InProgress"})
+
+    entry = client.get("/activity", params={"kind": "updated"}).json()[0]
+    assert entry["field"] == "status"
+    assert entry["from_value"] == "ToDo"
+    assert entry["to_value"] == "InProgress"
+
+
 def test_activity_is_scoped_to_its_own_task(client):
     first = _task(client, title="First")
     second = _task(client, title="Second")
@@ -171,11 +274,25 @@ def test_activity_is_scoped_to_its_own_task(client):
     assert [e["kind"] for e in _activity(client, second["id"])] == ["created"]
 
 
-def test_deleting_a_task_removes_its_activity(client):
-    task = _task(client)
-    client.patch(f"/tasks/{task['id']}", json={"priority": "High"})
+def test_deleting_a_task_records_a_deleted_entry(client):
+    task = _task(client, title="Doomed")
 
     assert client.delete(f"/tasks/{task['id']}").status_code == 204
 
+    feed = client.get("/activity", params={"task_id": task["id"]}).json()
+    assert feed[0]["kind"] == "deleted"
+    assert feed[0]["task_title"] == "Doomed"
+    assert feed[0]["task_id"] == task["id"]
+
+
+def test_deleted_task_activity_survives_on_the_feed(client):
+    task = _task(client)
+    client.patch(f"/tasks/{task['id']}", json={"priority": "High"})
+    client.delete(f"/tasks/{task['id']}")
+
+    # The task resource is gone, so its sub-resource 404s...
     assert client.get(f"/tasks/{task['id']}/activity").status_code == 404
-    assert task["id"] not in storage._activity
+    # ...but the history is still readable on the log.
+    kinds = [e["kind"] for e in client.get("/activity", params={"task_id": task["id"]}).json()]
+    assert kinds == ["deleted", "updated", "created"]
+    assert any(e.task_id == task["id"] for e in storage._activity)

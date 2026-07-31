@@ -348,3 +348,60 @@ in [verification.md](verification.md) §6.
 *after* revealing the dialog, which flashes the previous task's values for a
 frame, and tried to focus the title input before it was visible — focus silently
 fails on a hidden element. Populate before showing; focus after.
+
+### P19 — Revisiting a decision instead of defending it
+
+> I previously excluded `deleted` activity entries, and wrote the justification
+> into the ADR: activity is only reachable via `/tasks/{id}/activity`, which
+> 404s once the task is gone, so retained rows would be unreadable. I now want a
+> board-wide `GET /activity`. Does my original justification still hold? Answer
+> that before proposing an implementation.
+
+**Returned:** no — and correctly identified *why*. The exclusion rested entirely
+on unreachability, and a board-wide feed makes the rows reachable. It also
+spotted the structural consequence I had not: `_activity` was keyed by task id,
+and once a task is gone there is no bucket to put its deletion in, so the store
+has to become a flat list.
+
+**Accepted**, and recorded as Decision 14 *superseding* part of Decision 12
+rather than quietly editing the old text. The brief permits excluding delete
+events with an explanation, so the exclusion would still have passed — it just
+stopped being honest once the premise changed.
+
+**Rejected:** a `deleted_at` tombstone on the task instead. It keeps sub-resources
+resolving, but every list, filter and count then has to remember to exclude
+tombstones, and forgetting once puts deleted tasks back on the board.
+
+### P20 — What the feed needs that the per-task view does not
+
+> Before writing the feed: the per-task panel gets the task name from the dialog
+> header. Where does the board-wide feed get it, given entries outlive their
+> tasks?
+
+**Returned:** the recognition that a live lookup is impossible for a deleted task,
+so the title has to be snapshotted onto each entry at write time.
+
+**Accepted**, plus its observation about the trade-off: a rename leaves older
+entries under the old name. That is arguably *more* correct for a history — it
+records what the task was called when the event happened — so it is documented as
+intended rather than patched. `test_feed_records_the_title_as_it_was_at_the_time`
+pins it.
+
+### P21 — Break the new rules
+
+> Break these four and show me the failing test: deleting records nothing;
+> deleting purges history (the behaviour I just reversed); the feed ignores
+> `limit`; the feed returns oldest first. Restore in a `finally`, and refuse to
+> start if the file is already modified.
+
+**Returned:** a script following the P10 safety contract without being reminded of
+it.
+
+**Caught 4 of 4.** Break 14 matters most: it restores the *original* cascade
+behaviour, proving the reversal is pinned by a test and not just by prose in the
+ADR.
+
+**Found separately, not by the assistant:** restructuring `_activity` from a dict
+to a list turned `assert task["id"] not in storage._activity` into a comparison
+between a string and a list of objects — always true. The test passed while
+asserting nothing. A refactor can hollow out a test without breaking it.

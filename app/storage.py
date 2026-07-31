@@ -14,9 +14,13 @@ from app.models import (
 )
 
 _tasks: dict[str, TaskResponse] = {}
-# Both keyed by task id, both append-ordered (oldest first).
+# Keyed by task id, append-ordered (oldest first). Purged when the task goes.
 _comments: dict[str, list[CommentResponse]] = {}
-_activity: dict[str, list[ActivityEntry]] = {}
+# One flat append-only log, oldest first, NOT keyed by task: entries outlive the
+# tasks they describe, so there is no per-task bucket to put a deletion in.
+# Per-task reads filter it. O(n) per lookup, which for an in-memory learning
+# project is cheaper than keeping an index correct.
+_activity: list[ActivityEntry] = []
 
 # Fields whose changes are worth a line in the activity log. `updated_at` is
 # excluded: it changes on every write and would double the log saying nothing.
@@ -33,6 +37,7 @@ TRACKED_FIELDS: tuple[str, ...] = (
 
 def _record_activity(
     task_id: str,
+    task_title: str,
     kind: ActivityKind,
     field: Optional[str] = None,
     from_value: Optional[str] = None,
@@ -41,13 +46,14 @@ def _record_activity(
     entry = ActivityEntry(
         id=str(uuid4()),
         task_id=task_id,
+        task_title=task_title,
         kind=kind,
         field=field,
         from_value=from_value,
         to_value=to_value,
         at=datetime.now(timezone.utc),
     )
-    _activity.setdefault(task_id, []).append(entry)
+    _activity.append(entry)
     return entry
 
 
@@ -77,7 +83,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
         updated_at=now,
     )
     _tasks[task_id] = task
-    _record_activity(task_id, ActivityKind.CREATED, to_value=describe_value(task.title))
+    _record_activity(task_id, task.title, ActivityKind.CREATED)
     return _with_comment_count(task)
 
 
@@ -136,6 +142,7 @@ def update_task(task_id: str, payload: TaskUpdate) -> Optional[TaskResponse]:
         if before != after:
             _record_activity(
                 task_id,
+                updated_task.title,
                 ActivityKind.UPDATED,
                 field=name,
                 from_value=describe_value(before),
@@ -146,14 +153,18 @@ def update_task(task_id: str, payload: TaskUpdate) -> Optional[TaskResponse]:
 
 
 def delete_task(task_id: str) -> bool:
-    if task_id in _tasks:
-        del _tasks[task_id]
-        # Comments and activity are only reachable through this task's routes,
-        # so keeping them would leak records nothing can ever read.
-        _comments.pop(task_id, None)
-        _activity.pop(task_id, None)
-        return True
-    return False
+    existing = _tasks.get(task_id)
+    if existing is None:
+        return False
+
+    del _tasks[task_id]
+    # Comments go: they are only reachable through /tasks/{id}/comments, which
+    # 404s once the task does not exist, so keeping them would leak records
+    # nothing can read. Activity stays — GET /activity can still read it, and a
+    # history that silently forgets deletions is not a history.
+    _comments.pop(task_id, None)
+    _record_activity(task_id, existing.title, ActivityKind.DELETED)
+    return True
 
 
 def add_comment(task_id: str, payload: CommentCreate) -> Optional[CommentResponse]:
@@ -172,6 +183,7 @@ def add_comment(task_id: str, payload: CommentCreate) -> Optional[CommentRespons
     _comments.setdefault(task_id, []).append(comment)
     _record_activity(
         task_id,
+        _tasks[task_id].title,
         ActivityKind.COMMENTED,
         from_value=payload.author,
         to_value=describe_value(payload.body),
@@ -189,13 +201,38 @@ def get_comments(task_id: str) -> Optional[list[CommentResponse]]:
 
 
 def get_activity(task_id: str) -> Optional[list[ActivityEntry]]:
-    """Newest first — a changelog reads backwards."""
+    """One task's history, newest first — a changelog reads backwards.
+
+    Returns None for an unknown task so the route can 404. That includes a task
+    that has been deleted: the task resource is gone, so its sub-resource is
+    gone with it. Its entries, including the deletion itself, remain readable on
+    the board-wide feed.
+    """
     if task_id not in _tasks:
         return None
-    return list(reversed(_activity.get(task_id, [])))
+    return [entry for entry in reversed(_activity) if entry.task_id == task_id]
+
+
+def get_all_activity(kind=None, task_id=None, limit: int = 50) -> list[ActivityEntry]:
+    """The board-wide feed, newest first.
+
+    Unlike the per-task view this does not 404 on an unknown id — it is a log,
+    not a sub-resource, and asking it about a task that no longer exists is the
+    normal way to find out what happened to it.
+    """
+    entries = list(reversed(_activity))
+    if kind is not None:
+        entries = [e for e in entries if e.kind == kind]
+    if task_id is not None:
+        entries = [e for e in entries if e.task_id == task_id]
+    return entries[:limit]
 
 
 def _reset() -> None:
     _tasks.clear()
     _comments.clear()
     _activity.clear()
+
+
+MAX_ACTIVITY_LIMIT = 200
+DEFAULT_ACTIVITY_LIMIT = 50

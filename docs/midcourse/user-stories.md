@@ -300,18 +300,44 @@ for this product and was changed deliberately.
 
 ### F4-S5 — Not leave orphans behind
 
-> As someone deleting a finished task, I want its comments and history to go with
-> it so that the store does not accumulate unreachable records.
+> As someone deleting a finished task, I want its comments to go with it so that
+> the store does not accumulate unreachable records.
 
 **Acceptance criteria**
 
-- `DELETE /tasks/{id}` removes the task's comments and activity entries.
-- A new task that happens to reuse nothing of the old one starts with an empty
-  thread and a single `created` entry.
+- `DELETE /tasks/{id}` removes the task's comments.
 - Comments and activity for one task are never returned for another.
+- A new task starts with an empty thread and a single `created` entry.
 
-> **AI assumption corrected.** The assistant kept activity rows after the task was
-> deleted, on the reasoning that an audit log should be append-only. But activity
-> is only reachable through `GET /tasks/{id}/activity`, which now `404`s — so the
-> rows were unreadable by construction, and simply leaked. They cascade instead.
-> A genuinely durable audit log is a different feature with a different endpoint.
+> **Superseded in part.** This story originally said activity was deleted too,
+> and justified it: activity was only reachable through
+> `GET /tasks/{id}/activity`, which `404`s once the task is gone, so keeping the
+> rows would have leaked records nothing could read. That reasoning was sound —
+> until `GET /activity` existed. See F4-S6.
+
+### F4-S6 — See that something was deleted
+
+> As someone who cannot find a task, I want the board's history to show that it
+> was deleted so that I am not left wondering whether I imagined it.
+
+**Acceptance criteria**
+
+- `DELETE /tasks/{id}` records a `deleted` entry.
+- `GET /activity` returns events across every task, newest first.
+- A deleted task's entries — including the deletion — remain on that feed.
+- `GET /tasks/{id}/activity` still `404`s for a deleted task: the task resource
+  is gone, so its sub-resource is too.
+- `GET /activity?task_id=…` for an unknown id returns `200 []`, not `404` — a
+  log is not a sub-resource, and asking it about a task that no longer exists is
+  the normal way to find out what happened.
+- Every entry carries `task_title` as it was **at the time**, so the feed is
+  readable without the task still existing.
+- The feed is capped (`limit`, default 50, max 200) because the log only grows.
+- An `Activity` button in the header opens the feed; `deleted` entries are
+  struck through.
+
+> **Decision reversed, not defended.** Excluding delete events was the right call
+> *given a per-task-only API*. Adding the board-wide feed removed the premise —
+> the rows are now readable — so the exclusion became a hole rather than a scope
+> cut. The honest response was to reverse it. Recorded as ADR Decision 14
+> superseding the cascade half of Decision 12.

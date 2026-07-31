@@ -60,7 +60,7 @@ by `file://`.
 pytest -q
 ```
 
-110 tests covering CRUD, validation, status-transition rules, due dates /
+122 tests covering CRUD, validation, status-transition rules, due dates /
 overdue state, tags and tag filtering, text search, comments, and the activity
 log.
 
@@ -73,10 +73,11 @@ log.
 | `POST` | `/tasks` | Create a task; `201` on success |
 | `GET` | `/tasks/{id}` | `404` if unknown |
 | `PATCH` | `/tasks/{id}` | Partial update; only the fields sent are changed |
-| `DELETE` | `/tasks/{id}` | `204` on success; also removes the task's comments and activity |
+| `DELETE` | `/tasks/{id}` | `204` on success; removes the task's comments, keeps its activity, records a `deleted` event |
 | `GET` | `/tasks/{id}/comments` | Comments, oldest first; `404` if the task is unknown |
 | `POST` | `/tasks/{id}/comments` | Add a comment; `201` on success |
-| `GET` | `/tasks/{id}/activity` | Change history, newest first; `404` if the task is unknown |
+| `GET` | `/tasks/{id}/activity` | One task's history, newest first; `404` if the task is unknown |
+| `GET` | `/activity` | Board-wide feed, newest first. Filters: `kind`, `task_id`, `limit` (default 50, max 200) |
 
 ### Filters
 
@@ -117,7 +118,9 @@ log.
 
 | Field | Type | Notes |
 |---|---|---|
-| `kind` | enum | `created` · `updated` · `commented` |
+| `kind` | enum | `created` · `updated` · `commented` · `deleted` |
+| `task_id` | string | The task the event belongs to |
+| `task_title` | string | The task's title **at the time of the event**; a rename does not rewrite history |
 | `field` | string \| null | Which field changed (`updated` entries only) |
 | `from_value` / `to_value` | string \| null | Flattened to text, truncated at 80 chars |
 | `at` | datetime | UTC |
@@ -133,6 +136,11 @@ not overdue, and a `Done` task is never overdue.
 due date writes two entries. A `PATCH` re-sending a field's current value records
 nothing. Commenting records an entry but does **not** change the task's
 `updated_at`. Comments are append-only — there is no edit or delete.
+
+**Deleting a task** removes its comments but keeps its activity, and records a
+`deleted` entry. The task's own `/tasks/{id}/activity` route then `404`s — the
+sub-resource goes with the resource — while its history stays readable on
+`GET /activity`. See [mini-adr.md](docs/midcourse/mini-adr.md) Decision 14.
 
 ### Examples
 
@@ -156,6 +164,10 @@ curl -X POST http://localhost:8000/tasks/<id>/comments \
   -d '{"author":"alice","body":"Blocked on the migration."}'
 
 curl http://localhost:8000/tasks/<id>/activity
+
+# what has happened across the whole board, and what was deleted
+curl "http://localhost:8000/activity?limit=20"
+curl "http://localhost:8000/activity?kind=deleted"
 ```
 
 ## Project structure
@@ -174,7 +186,7 @@ tests/
   conftest.py        TestClient + storage-reset fixtures
   test_tasks.py      Task CRUD, filters, due dates, tags, search
   test_comments.py   Comment CRUD, validation, comment_count
-  test_activity.py   Activity entries, value formatting, cascade
+  test_activity.py   Activity entries, value formatting, delete events, feed
   test_health.py     Health endpoint
 docs/midcourse/      Mid-course project documentation
 ```

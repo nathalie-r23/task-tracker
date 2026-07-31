@@ -37,6 +37,7 @@ $ python -m pytest -q
 | After Feature 4 tests | `pytest -q` | **109 passed** (+39) |
 | After the second frontend refactor | `pytest -q` | **109 passed** |
 | After fixing a flaky pre-existing test | `pytest -q` | **110 passed** (+1) |
+| After delete events + the board-wide feed | `pytest -q` | **122 passed** (+12) |
 
 ```
 $ python -m pytest -q
@@ -90,12 +91,18 @@ leaves the thread intact · comments scoped to their own task · `comment_count`
 starts at 0 · reflects the count · present on `GET /tasks` · survives an unrelated
 PATCH · commenting does not change `updated_at` · delete cascades.
 
-**Activity (16)** — `created` entry on task creation · unknown task → 404 · one
+**Activity (28)** — `created` entry on task creation · unknown task → 404 · one
 entry per changed field · records before and after · re-sending the current value
 records nothing · empty PATCH records nothing · rejected PATCH records nothing ·
 newest first · enums recorded by value · dates by ISO string · tag lists
 comma-joined · cleared tags record `null` · long values truncated at 80 ·
-`commented` entry on comment · scoped to its own task · delete cascades.
+`commented` entry on comment · scoped to its own task · `deleted` entry on delete ·
+deleted task's history survives on the feed while its own route still 404s · feed
+spans every task, newest first · feed empty before anything happens · feed
+filtered by `kind` · unknown `kind` → 422 · feed filtered by `task_id` · unknown
+`task_id` → `200 []` not 404 · `limit` keeps the newest N · default limit 50 ·
+`limit` outside 1–200 → 422 · `task_title` snapshotted at write time (a rename
+does not rewrite history) · status change on the feed carries `from`/`to`.
 
 ---
 
@@ -163,7 +170,29 @@ not from a screenshot.
 | Escape / backdrop click | closes, restores page scroll | closed, `body.style.overflow` back to `""` |
 | Dialog size | fits without page scroll | 627×608 in an 820px viewport, no horizontal scroll |
 
+### Delete events and the board-wide feed
+
+| Check | Expected | Observed |
+|---|---|---|
+| `Activity` button in the header | opens the feed | 13 entries, newest first |
+| Feed entry format | kind + task name + what changed | `updated · Write the API docs · Assignee: none → carol` |
+| Feed spans tasks | not one task's history | entries from 4 different tasks |
+| `Delete` in the **New Task** modal | hidden — nothing to delete yet | `hidden: true` |
+| `Delete` in the **Edit** modal | shown, labelled `Delete` | `hidden: false` |
+| First click on Delete | arms only, sends nothing | label → `Really delete?`, **0 DELETE requests** |
+| Second click | deletes once, closes, refreshes | 1 DELETE, modal closed, board 5 → 4 cards |
+| Feed after deleting | `deleted` entry on top, struck through | `deleted · Plan Q4 roadmap · Task deleted`, `.is-deleted` present |
+| Deleted task's history | still readable on the feed | 2 entries retained (`created`, `deleted`) |
+
 Console was clean (no errors or warnings) across all of the above.
+
+> **A trap worth naming.** Between browser checks the board repeatedly appeared
+> empty, which looks exactly like the comments feature being broken. It was not:
+> the API runs with `--reload` and storage is in memory, so every write to
+> `app/storage.py` during the Break Tests restarted uvicorn and wiped the board.
+> Eight file writes, eight restarts. The fix is to re-seed, not to debug —
+> but the failure mode is indistinguishable from a real bug until you check
+> `GET /tasks` and see `0`.
 
 ---
 
@@ -320,6 +349,42 @@ Caught 8 of 8 breaks.
 ```
 
 `git status` was clean afterwards, confirming nothing was left modified.
+
+### Breaks 13–16 — delete events and the feed
+
+| # | Rule broken | Guarding test | Caught |
+|---|---|---|---|
+| 13 | Deleting records a `deleted` entry | `test_deleting_a_task_records_a_deleted_entry` | ✅ `assert 'created' == 'deleted'` |
+| 14 | Deleting keeps the task's history | `test_deleted_task_activity_survives_on_the_feed` | ✅ `assert ['deleted'] == ['deleted', 'updated', 'created']` |
+| 15 | The feed honours `limit` | `test_feed_defaults_to_fifty_entries` | ✅ `assert 61 == 50` |
+| 16 | The feed is newest-first | `test_feed_returns_entries_from_every_task_newest_first` | ✅ `('created', 'First') != ('updated', 'First')` |
+
+```
+File restored.
+AFTER RESTORE: 122 passed, 3 warnings in 1.33s
+
+Caught 4 of 4 breaks.
+```
+
+Break 14 is the interesting one: it restores the *original* cascade behaviour, so
+it confirms the reversal in ADR Decision 14 is actually pinned by a test rather
+than only by prose.
+
+### A test that had quietly stopped testing anything
+
+Restructuring `_activity` from `dict[task_id, list]` to a flat list silently
+neutered an existing assertion:
+
+```python
+assert task["id"] not in storage._activity   # was: dict -> key lookup
+                                             # now:  list -> compares str to ActivityEntry
+```
+
+Against a list of `ActivityEntry` objects that comparison is always true, so the
+test passed while asserting nothing — the same "cannot fail" pattern found in §6,
+arrived at from a different direction. It was replaced with
+`any(e.task_id == task["id"] for e in storage._activity)`, which Break 14 proves
+can fail. **A refactor can turn a good test into a vacuous one without failing.**
 
 ---
 

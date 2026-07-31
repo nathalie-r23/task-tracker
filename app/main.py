@@ -5,7 +5,7 @@ Module 1 Task Tracker API. Only the health endpoint is wired up at
 this stage — no CRUD, storage, or business logic yet.
 """
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import storage
@@ -14,6 +14,7 @@ from app.business_rules import validate_status_transition
 from app.core.config import settings
 from app.models import (
     ActivityEntry,
+    ActivityKind,
     CommentCreate,
     CommentResponse,
     TaskCreate,
@@ -135,8 +136,34 @@ def list_comments(task_id: str) -> list[CommentResponse]:
 @app.get("/tasks/{task_id}/activity", response_model=list[ActivityEntry], tags=["activity"])
 def list_activity(task_id: str) -> list[ActivityEntry]:
     """A task's history, newest first: one entry per changed field, plus
-    creation and comments."""
+    creation and comments.
+
+    `404` for an unknown task, including one that has been deleted — the task
+    resource is gone, so its sub-resource is too. Its entries stay readable on
+    `GET /activity`.
+    """
     entries = storage.get_activity(task_id)
     if entries is None:
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
     return entries
+
+
+@app.get("/activity", response_model=list[ActivityEntry], tags=["activity"])
+def list_all_activity(
+    kind: ActivityKind | None = None,
+    task_id: str | None = None,
+    limit: int = Query(
+        default=storage.DEFAULT_ACTIVITY_LIMIT, ge=1, le=storage.MAX_ACTIVITY_LIMIT
+    ),
+) -> list[ActivityEntry]:
+    """Activity across every task, newest first.
+
+    This is the only place a `deleted` entry can be read, and the only place a
+    deleted task's history survives. Unlike the per-task route it never 404s:
+    it is a log, not a sub-resource, so asking about an id that no longer exists
+    is the normal way to find out what happened to it — it just returns `[]` if
+    there is nothing.
+
+    `limit` is capped rather than unbounded because the log only grows.
+    """
+    return storage.get_all_activity(kind=kind, task_id=task_id, limit=limit)

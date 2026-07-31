@@ -8,7 +8,9 @@ that were turned down as too big for the module.
 
 Decisions 1–6 cover the two features the brief asks for (due dates, tags).
 Decisions 7–13 cover the two built afterwards (search, comments + activity) and
-were written before that code existed, same as the first six.
+were written before that code existed, same as the first six. Decision 14
+reverses part of Decision 12 and explains why the earlier reasoning stopped
+holding.
 
 ---
 
@@ -182,6 +184,46 @@ against a per-task index and cannot be wrong.
 **Alternative rejected — letting the frontend count.** That is one extra request
 per card on every board load.
 
+## Decision 14 — Delete events are recorded, superseding the cascade
+
+**Supersedes the activity half of Decision 12.** Comments still cascade; activity
+no longer does, and `DELETE` now writes a `deleted` entry.
+
+**What changed my mind.** The original exclusion was not arbitrary — it argued
+that activity was reachable *only* through `GET /tasks/{id}/activity`, which
+`404`s once the task is gone, so retained rows would be unreadable by
+construction and would simply leak. That was correct given a per-task-only API.
+Adding `GET /activity` removed the premise. The same reasoning that justified
+dropping the rows now requires keeping them: they are readable, and a history
+that silently forgets deletions is not a history.
+
+Worth recording plainly: this is a decision **reversed**, not a decision defended.
+The brief allows "delete event recorded **or** intentionally excluded with an
+explanation", and the exclusion would still have passed. It stopped being an
+honest scope cut the moment the feed existed.
+
+**Consequences:**
+
+- `_activity` becomes one flat append-only list rather than a dict keyed by task.
+  There is no per-task bucket to put a deletion in once the task is gone. Per-task
+  reads filter the list — O(n), which for an in-memory learning project is cheaper
+  than keeping an index correct.
+- Entries carry `task_title`, snapshotted at write time. The feed outlives its
+  tasks, so it cannot look the name up later. A rename therefore leaves older
+  entries under the old name, which is what was true when they were written.
+- `GET /tasks/{id}/activity` still `404`s for a deleted task — the sub-resource
+  goes with the resource. `GET /activity?task_id=…` returns `[]` instead, because
+  a log is not a sub-resource.
+
+**Alternative rejected — a `deleted_at` tombstone on the task.** Keeps the task
+row so its sub-resources still resolve, but then every list, filter and count has
+to remember to exclude tombstones, and forgetting once shows deleted tasks on the
+board. Soft delete is a larger change than the feature needs.
+
+**Alternative rejected — an unbounded feed.** The log only ever grows. `limit`
+defaults to 50 and is capped at 200 by FastAPI's own validation, so an
+out-of-range value is a `422` rather than a slow response.
+
 ---
 
 ## Changes made in passing
@@ -212,5 +254,9 @@ Recurring due dates · reminders and notifications · tag rename/merge · tag
 colours · per-user "my overdue tasks" · saved filter presets · bulk re-tagging ·
 timezone-aware per-user overdue calculation · fuzzy or ranked search · search
 result highlighting · pagination · comment editing and deletion · threaded
-replies · @mentions · a board-wide activity feed · real users and authentication
-(comment authors are free text, and the API has no identity of any kind).
+replies · @mentions · soft delete / undo · activity retention limits · real users
+and authentication (comment authors are free text, and the API has no identity of
+any kind).
+
+*(A board-wide activity feed was on this list until Decision 14 moved it into
+scope.)*
