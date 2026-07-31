@@ -298,29 +298,21 @@ for this product and was changed deliberately.
 - The count is correct straight after posting, with no page reload.
 - The count never goes stale against the comment store.
 
-### F4-S5 — Not leave orphans behind
+### F4-S5 — Know what happened to a task that is gone
 
-> As someone deleting a finished task, I want its comments to go with it so that
-> the store does not accumulate unreachable records.
+> As someone who cannot find a task, I want the board's history to show that it
+> was deleted, without leaving behind records nothing can read.
 
 **Acceptance criteria**
 
-- `DELETE /tasks/{id}` removes the task's comments.
+*Cleanup*
+
+- `DELETE /tasks/{id}` removes the task's comments — they are unreachable once
+  the task is gone.
 - Comments and activity for one task are never returned for another.
 - A new task starts with an empty thread and a single `created` entry.
 
-> **Superseded in part.** This story originally said activity was deleted too,
-> and justified it: activity was only reachable through
-> `GET /tasks/{id}/activity`, which `404`s once the task is gone, so keeping the
-> rows would have leaked records nothing could read. That reasoning was sound —
-> until `GET /activity` existed. See F4-S6.
-
-### F4-S6 — See that something was deleted
-
-> As someone who cannot find a task, I want the board's history to show that it
-> was deleted so that I am not left wondering whether I imagined it.
-
-**Acceptance criteria**
+*The delete event*
 
 - `DELETE /tasks/{id}` records a `deleted` entry.
 - `GET /activity` returns events across every task, newest first.
@@ -336,8 +328,17 @@ for this product and was changed deliberately.
 - An `Activity` button in the header opens the feed; `deleted` entries are
   struck through.
 
-> **Decision reversed, not defended.** Excluding delete events was the right call
-> *given a per-task-only API*. Adding the board-wide feed removed the premise —
-> the rows are now readable — so the exclusion became a hole rather than a scope
-> cut. The honest response was to reverse it. Recorded as ADR Decision 14
-> superseding the cascade half of Decision 12.
+> **AI assumption corrected — and then my own decision reversed.** The assistant
+> first kept activity rows after deletion, arguing an audit log should be
+> append-only. I rejected that: activity was reachable *only* through
+> `GET /tasks/{id}/activity`, which `404`s once the task is gone, so the rows
+> would have been unreadable by construction and would simply have leaked. They
+> cascaded instead.
+>
+> Adding `GET /activity` later removed that premise. The rows became readable, so
+> the same reasoning that justified dropping them now required keeping them — and
+> my exclusion became a hole rather than a scope cut. Reversed deliberately and
+> recorded as ADR Decision 14 *superseding* the cascade half of Decision 12,
+> rather than quietly rewriting the original text. The brief permits excluding
+> delete events with an explanation, so the exclusion would still have passed; it
+> just stopped being honest.
