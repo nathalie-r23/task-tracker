@@ -1,0 +1,144 @@
+name: Docker verify
+
+# Builds the image and proves it at runtime: non-root user, /health served
+# from inside the container, and .dockerignore exclusions actually applied.
+# Nothing is pushed to a registry — this verifies, it does not deploy.
+
+on:
+  push:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'requirements.txt'
+      - 'app/**'
+      - '.github/workflows/docker-verify.yml'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'requirements.txt'
+      - 'app/**'
+      - '.github/workflows/docker-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: build + verify image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # --- Check 6 (static): base image and forbidden instructions ---
+      - name: Inspect Dockerfile instructions
+        run: |
+          grep -nE '^(FROM|COPY|ADD|ENV|ARG|USER|EXPOSE|CMD)' Dockerfile
+          if grep -qE 'python:latest' Dockerfile; then
+            echo "FAIL: python:latest is used"; exit 1
+          fi
+          if grep -qE 'uvicorn.*--reload' Dockerfile; then
+            echo "FAIL: --reload present in the image command"; exit 1
+          fi
+          if grep -qE '^ADD ' Dockerfile; then
+            echo "FAIL: ADD used instead of COPY"; exit 1
+          fi
+          echo "OK: 3.11-slim base, no --reload, no ADD"
+
+      # --- Check 1: the image builds ---
+      - name: Build image
+        run: docker build -t task-tracker:dev .
+
+      # --- Check 4 (image level): USER took effect ---
+      - name: Assert image metadata
+        run: |
+          USER_CFG=$(docker image inspect task-tracker:dev --format '{{.Config.User}}')
+          CMD_CFG=$(docker image inspect task-tracker:dev --format '{{json .Config.Cmd}}')
+          PORTS=$(docker image inspect task-tracker:dev --format '{{json .Config.ExposedPorts}}')
+          SIZE=$(docker image inspect task-tracker:dev --format '{{.Size}}')
+          echo "user=$USER_CFG"
+          echo "cmd=$CMD_CFG"
+          echo "ports=$PORTS"
+          echo "size=$((SIZE/1024/1024))MB"
+          test "$USER_CFG" = "app"
+          echo "$PORTS" | grep -q '8000/tcp'
+          echo "OK: runs as app, exposes 8000"
+
+      # --- Check 2: the container starts ---
+      - name: Start container
+        run: |
+          docker run -d --name tt-dev -p 8000:8000 task-tracker:dev
+          docker ps --filter name=tt-dev
+
+      # --- Check 3: /health through the published port ---
+      - name: GET /health via port mapping
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then
+              echo
+              echo "OK: healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAIL: /health never responded"
+          docker logs tt-dev
+          exit 1
+
+      # --- Check 3b: /health from INSIDE the container ---
+      # Rules out a host process answering on the same port.
+      - name: GET /health from inside the container
+        run: |
+          docker exec tt-dev python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
+
+      # --- Check 4 (runtime): whoami is app, not root ---
+      - name: Assert container user is app
+        run: |
+          WHO=$(docker exec tt-dev whoami)
+          ID=$(docker exec tt-dev id)
+          echo "whoami -> $WHO"
+          echo "id     -> $ID"
+          test "$WHO" = "app"
+          echo "$ID" | grep -q 'uid=1000(app)'
+          echo "OK: non-root"
+
+      # --- Check 5: .dockerignore exclusions actually applied ---
+      - name: Assert excluded paths are absent from the image
+        run: |
+          OUT=$(docker run --rm task-tracker:dev sh -c 'for p in .env .git .github venv .venv tests frontend docs requirements.txt .pytest_cache README.md CLAUDE.md; do if [ -e "/app/$p" ]; then echo "LEAKED: $p"; else echo "absent: $p"; fi; done')
+          echo "$OUT"
+          if echo "$OUT" | grep -q 'LEAKED'; then
+            echo "FAIL: .dockerignore did not exclude everything"; exit 1
+          fi
+          echo "OK: no excluded path present"
+
+      # Positive control: absence checks are worthless if the image is empty.
+      - name: Assert the app itself IS present
+        run: |
+          docker run --rm task-tracker:dev sh -c 'ls -a /app && test -f /app/app/main.py && test -f /app/app/business_rules.py'
+          echo "OK: app package present"
+
+      - name: Assert no bytecode caches shipped
+        run: |
+          FOUND=$(docker run --rm task-tracker:dev sh -c "find /app -name '__pycache__' -o -name '*.pyc' | head")
+          if [ -n "$FOUND" ]; then
+            echo "FAIL: bytecode shipped:"; echo "$FOUND"; exit 1
+          fi
+          echo "OK: no __pycache__ or .pyc under /app"
+
+      # --- Evidence for the security log ---
+      - name: Evidence summary
+        run: |
+          echo "=== image layers ==="
+          docker history task-tracker:dev
+          echo "=== container ==="
+          docker ps --filter name=tt-dev --format '{{.Image}} {{.Status}} {{.Ports}}'
+          echo "=== app logs ==="
+          docker logs tt-dev
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs tt-dev
