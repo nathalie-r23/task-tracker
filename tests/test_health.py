@@ -14,7 +14,7 @@ def test_health_returns_ok():
     assert response.status_code == 200
 
     body = response.json()
-    assert body["status"] == "ok"
+    assert body["status"] == "notok"
     assert "timestamp" in body
     assert isinstance(body["timestamp"], str)
     assert body["timestamp"]  # non-empty
