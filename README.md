@@ -1,7 +1,7 @@
 # Task Tracker
 
 A learning-project Kanban task tracker: a REST API built with Python, FastAPI and
-Pydantic, plus a dependency-free single-file frontend.
+Pydantic v2, plus a dependency-free single-file frontend.
 
 Tasks have a title, description, status, priority, assignee, an optional **due
 date** (with server-computed overdue state) and **tags**, and they carry
@@ -9,27 +9,52 @@ date** (with server-computed overdue state) and **tags**, and they carry
 between columns, full-text **search**, and stacking filters for priority, tag and
 overdue state.
 
-## Requirements
+Storage is in-process Python dictionaries. There is no database, no
+authentication and no deployment configuration — see
+[Conventions and limitations](#conventions-and-current-limitations).
 
-- Python 3.9+ (developed against 3.10)
+## Prerequisites
 
-## Setup
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | **3.11** | What CI and the Docker image use, both verified green |
+| Python (local dev) | 3.10.11 | The checked-in `venv/` — the suite passes on this too |
+| Docker | any recent | **Optional**, only for the container workflow |
+
+The 3.11 pin is not enforced by any config file in this repo; it is set in
+`.github/workflows/ci.yml` and the `Dockerfile`. Older interpreters are
+untested — the previous "Python 3.9+" claim was never verified and has been
+dropped. **[VERIFY]** if you need a supported floor below 3.10.
+
+## Local setup
+
+From the repository root:
 
 ```bash
 python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS / Linux
+```
+
+```bash
+venv\Scripts\activate
+```
+
+On macOS or Linux use `source venv/bin/activate` instead.
+
+```bash
 pip install -r requirements.txt
 ```
 
-Optional configuration lives in `.env` (see `.env.example`):
+Optional configuration lives in `.env` (see `.env.example`). Both settings have
+defaults, so the app runs without it:
 
 ```
 PORT=8000
 APP_ENV=development
 ```
 
-## Run the backend
+## Run the app locally
+
+Two servers, two terminals. Backend first:
 
 ```bash
 uvicorn app.main:app --reload --port 8000
@@ -39,30 +64,99 @@ uvicorn app.main:app --reload --port 8000
 - Interactive docs: <http://localhost:8000/docs>
 - Health check: <http://localhost:8000/health>
 
-Storage is in memory, so tasks are cleared whenever the server restarts.
-
-## Open the frontend
-
-The frontend is a single static file that calls the API at `http://localhost:8000`.
-Start the backend first, then serve `frontend/` on any local port:
+Then serve the frontend on any local port:
 
 ```bash
 python -m http.server 5500 --directory frontend
 ```
 
-Then open <http://localhost:5500>. Opening `frontend/index.html` directly from
-disk also works — CORS accepts any `localhost` origin plus the `null` origin used
-by `file://`.
+Open <http://localhost:5500>. Opening `frontend/index.html` straight from disk
+also works — CORS accepts any `localhost` origin plus the `null` origin that
+`file://` sends.
 
-## Run the tests
+Tasks are cleared whenever the server restarts.
+
+## Run tests
 
 ```bash
-pytest -q
+pytest -v
 ```
 
-122 tests covering CRUD, validation, status-transition rules, due dates /
+**122 tests** covering CRUD, validation, status-transition rules, due dates and
 overdue state, tags and tag filtering, text search, comments, and the activity
 log.
+
+## Run with Docker
+
+The image is multi-stage on `python:3.11-slim` and runs as a non-root `app`
+user. From the repository root:
+
+```bash
+docker build -t task-tracker:dev .
+```
+
+```bash
+docker run -d --name tt-dev -p 8000:8000 task-tracker:dev
+```
+
+If port 8000 is already taken by a local uvicorn, use `-p 8001:8000` instead.
+
+```bash
+curl http://localhost:8000/health
+```
+
+```bash
+docker exec tt-dev whoami
+```
+
+That last command prints `app`, confirming the container is not running as
+root. Remove the container with `docker rm -f tt-dev`.
+
+The image contains only the interpreter, the installed dependencies and
+`app/`. Tests, the frontend, `docs/`, `.env` and git metadata are excluded by
+`.dockerignore`. Image size is reported in the Docker verify workflow log
+**[VERIFY]**.
+
+## CI workflow summary
+
+Two workflows, neither of which deploys anything.
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | every `push` and `pull_request` | Checks out, sets up Python 3.11, installs from `requirements.txt`, runs `pytest -v` |
+| [`docker-verify.yml`](.github/workflows/docker-verify.yml) | `push`/`pull_request` touching `Dockerfile`, `.dockerignore`, `requirements.txt` or `app/**`, plus manual dispatch | Builds the image, starts the container, checks `/health` through the port mapping and from inside, asserts the user is `app`, and asserts `.dockerignore` exclusions applied |
+
+Neither workflow uses `continue-on-error`, `|| true` or `--exit-zero`, and
+pytest output is not piped, so a failing test fails the check. This was proved
+by deliberately breaking one assertion and confirming CI turned red, then
+restoring it.
+
+## Project structure
+
+```
+app/
+  main.py            FastAPI app, routes, CORS
+  models.py          Pydantic models, validation, overdue rule, activity values
+  storage.py         In-memory stores, filtering, activity recording
+  business_rules.py  Status-transition rules
+  core/config.py     Settings loaded from .env
+  api/routes/        Health router
+  schemas/           Health response schema
+frontend/
+  index.html         Kanban board (no build step, no dependencies)
+tests/
+  conftest.py        TestClient + storage-reset fixtures
+  test_tasks.py      Task CRUD, filters, due dates, tags, search
+  test_comments.py   Comment CRUD, validation, comment_count
+  test_activity.py   Activity entries, value formatting, delete events, feed
+  test_health.py     Health endpoint
+.github/workflows/
+  ci.yml             Test suite on Python 3.11
+  docker-verify.yml  Image build and runtime verification
+Dockerfile           Multi-stage, non-root runtime image
+docs/                Project documentation (see below)
+CLAUDE.md            Working notes for Claude Code sessions
+```
 
 ## API
 
@@ -73,7 +167,7 @@ log.
 | `POST` | `/tasks` | Create a task; `201` on success |
 | `GET` | `/tasks/{id}` | `404` if unknown |
 | `PATCH` | `/tasks/{id}` | Partial update; only the fields sent are changed |
-| `DELETE` | `/tasks/{id}` | `204` on success; removes the task's comments, keeps its activity, records a `deleted` event |
+| `DELETE` | `/tasks/{id}` | `204`; removes the task's comments, keeps its activity, records a `deleted` event |
 | `GET` | `/tasks/{id}/comments` | Comments, oldest first; `404` if the task is unknown |
 | `POST` | `/tasks/{id}/comments` | Add a comment; `201` on success |
 | `GET` | `/tasks/{id}/activity` | One task's history, newest first; `404` if the task is unknown |
@@ -96,7 +190,7 @@ log.
 | `id` | string | UUID, server-assigned |
 | `title` | string | Required, trimmed, max 200 chars |
 | `description` | string | Defaults to `""` |
-| `status` | enum | `ToDo` · `InProgress` · `Done` |
+| `status` | enum | `ToDo` · `InProgress` · `Done` — case-sensitive on the wire |
 | `priority` | enum | `Low` · `Medium` · `High` |
 | `assignee` | string \| null | Optional |
 | `due_date` | date \| null | ISO `YYYY-MM-DD`; send `null` to clear |
@@ -105,96 +199,62 @@ log.
 | `comment_count` | int | **Read-only, derived** from the comment store on every read |
 | `created_at` / `updated_at` | datetime | UTC, server-assigned |
 
-### Comment fields
-
-| Field | Type | Notes |
-|---|---|---|
-| `id` / `task_id` | string | Server-assigned |
-| `author` | string \| null | Optional, max 80 chars; blank is stored as `null` and shown as "Anonymous" |
-| `body` | string | Required, trimmed, max 2000 chars |
-| `created_at` | datetime | UTC |
-
-### Activity fields
-
-| Field | Type | Notes |
-|---|---|---|
-| `kind` | enum | `created` · `updated` · `commented` · `deleted` |
-| `task_id` | string | The task the event belongs to |
-| `task_title` | string | The task's title **at the time of the event**; a rename does not rewrite history |
-| `field` | string \| null | Which field changed (`updated` entries only) |
-| `from_value` / `to_value` | string \| null | Flattened to text, truncated at 80 chars |
-| `at` | datetime | UTC |
-
-**Status transitions** are restricted: `ToDo → InProgress`, `InProgress → Done`,
-`Done → InProgress`, and same-status no-ops. Anything else returns `422`.
-
-**Overdue** is derived on every read rather than stored, so a task becomes overdue
-when the date rolls over without needing to be written to. A task due *today* is
-not overdue, and a `Done` task is never overdue.
-
-**Activity** is recorded per changed field, so a `PATCH` that changes priority and
-due date writes two entries. A `PATCH` re-sending a field's current value records
-nothing. Commenting records an entry but does **not** change the task's
-`updated_at`. Comments are append-only — there is no edit or delete.
-
-**Deleting a task** removes its comments but keeps its activity, and records a
-`deleted` entry. The task's own `/tasks/{id}/activity` route then `404`s — the
-sub-resource goes with the resource — while its history stays readable on
-`GET /activity`. See [mini-adr.md](docs/midcourse/mini-adr.md) Decision 14.
-
 ### Examples
 
 ```bash
-# create a task with a due date and tags
-curl -X POST http://localhost:8000/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Ship release notes","priority":"High",
-       "due_date":"2026-08-14","tags":["backend","urgent"]}'
+curl -X POST http://localhost:8000/tasks -H "Content-Type: application/json" -d '{"title":"Ship release notes","priority":"High","due_date":"2026-08-14","tags":["backend","urgent"]}'
+```
 
-# overdue backend tasks mentioning "migration" — filters stack with AND
+```bash
 curl "http://localhost:8000/tasks?q=migration&tag=backend&overdue=true"
+```
 
-# clear a due date
-curl -X PATCH http://localhost:8000/tasks/<id> \
-  -H "Content-Type: application/json" -d '{"due_date":null}'
-
-# comment on a task, then read its history
-curl -X POST http://localhost:8000/tasks/<id>/comments \
-  -H "Content-Type: application/json" \
-  -d '{"author":"alice","body":"Blocked on the migration."}'
-
-curl http://localhost:8000/tasks/<id>/activity
-
-# what has happened across the whole board, and what was deleted
-curl "http://localhost:8000/activity?limit=20"
+```bash
 curl "http://localhost:8000/activity?kind=deleted"
 ```
 
-## Project structure
+## Conventions and current limitations
 
-```
-app/
-  main.py            FastAPI app, routes, CORS
-  models.py          Pydantic models, validation, overdue rule, activity values
-  storage.py         In-memory stores, filtering, activity recording
-  business_rules.py  Status-transition rules
-  core/config.py     Settings loaded from .env
-  api/routes/        Health router
-frontend/
-  index.html         Kanban board (no build step, no dependencies)
-tests/
-  conftest.py        TestClient + storage-reset fixtures
-  test_tasks.py      Task CRUD, filters, due dates, tags, search
-  test_comments.py   Comment CRUD, validation, comment_count
-  test_activity.py   Activity entries, value formatting, delete events, feed
-  test_health.py     Health endpoint
-docs/midcourse/      Mid-course project documentation
-```
+**Conventions**
 
-## Mid-course project documentation
+- **Status transitions** are a closed allow-list in `app/business_rules.py`:
+  `ToDo → InProgress`, `InProgress → Done`, `Done → InProgress`, plus
+  same-status no-ops. Anything else returns `422`. The check runs **only on
+  `PATCH`** — `POST /tasks` does not call it, so a task can be *created*
+  directly as `Done`.
+- **Overdue** is derived on every read, never stored, so a task becomes overdue
+  when the date rolls over. Due *today* is not overdue, and a `Done` task is
+  never overdue.
+- **Activity** is recorded per changed field. Re-sending a field's current value
+  records no entry, though it does still refresh `updated_at`. A body with no
+  fields at all leaves `updated_at` untouched. Commenting records an entry but
+  does not change `updated_at`.
+- **Comments are append-only** — no edit, no delete.
+- Enum wire values are **case-sensitive**; `todo` is rejected, `ToDo` is not.
+
+**Current limitations**
+
+- **Storage is in-memory.** Everything is lost on restart. There is no database
+  and no persistence layer.
+- **No authentication or authorization.** No users, sessions or tokens. CORS is
+  configured on that assumption, with credentials disabled.
+- **Not deployed and not production-hardened.** The Docker image is built and
+  verified in CI but is not published to a registry or hosted anywhere.
+- **The frontend is not served by the API.** It is a separate static file, and
+  `API_BASE` is hardcoded to `http://localhost:8000`.
+- Single-process only; no concurrency control beyond what one Uvicorn worker
+  gives you.
+
+## Documentation
+
+Mid-course project documentation lives in [`docs/`](docs/README.md):
 
 - [user-stories.md](docs/midcourse/user-stories.md) — stories and acceptance criteria
 - [mini-adr.md](docs/midcourse/mini-adr.md) — design decisions and rejected alternatives
 - [prompt-log.md](docs/midcourse/prompt-log.md) — prompts, and what was accepted, edited or rejected
 - [verification.md](docs/midcourse/verification.md) — baseline, test results, manual checks, Break Tests
 - [reflection.md](docs/midcourse/reflection.md) — reflection on the AI-assisted workflow
+
+There is no `docs/decisions/` directory yet. The existing decision record is
+[mini-adr.md](docs/midcourse/mini-adr.md); a standalone technical note has not
+been written.
