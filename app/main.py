@@ -26,7 +26,16 @@ from app.models import (
 
 
 def create_app() -> FastAPI:
-    """Build and configure the FastAPI application."""
+    """Build and configure the FastAPI application.
+
+    Registers the CORS middleware and the health router. The task, comment and
+    activity routes are attached to the module-level ``app`` object below
+    rather than here.
+
+    Returns:
+        The configured FastAPI instance that Uvicorn serves as
+        ``app.main:app``.
+    """
     app = FastAPI(
         title="Task Tracker API",
         description="Module 1 learning project — REST API skeleton.",
@@ -70,6 +79,22 @@ def list_tasks(
     matches case-insensitively. `q` is a case-insensitive literal substring
     matched against title or description; blank means no search. All filters
     combine with AND.
+
+    Args:
+        status: Exact match on `ToDo`, `InProgress` or `Done`.
+        priority: Exact match on `Low`, `Medium` or `High`.
+        overdue: Tri-state overdue filter; see above.
+        tag: Case-insensitive exact match against any one of a task's tags.
+        q: Literal (non-regex) substring of title or description. Does not
+            match assignee or tags.
+
+    Returns:
+        Matching tasks, each stamped with its live `comment_count` and
+        computed `is_overdue`. An empty list when nothing matches — this
+        route never 404s.
+
+    Example:
+        curl "http://localhost:8000/tasks?tag=backend&overdue=true"
     """
     return storage.get_all_tasks(
         status=status, priority=priority, overdue=overdue, tag=tag, q=q
@@ -78,11 +103,42 @@ def list_tasks(
 
 @app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, tags=["tasks"])
 def create_task(payload: TaskCreate) -> TaskResponse:
+    """Create a task.
+
+    The status-transition allow-list is **not** applied here — it runs only on
+    `PATCH`. A task may therefore be created directly as `Done`: the rule
+    constrains movement between statuses, not the starting one.
+
+    Args:
+        payload: Validated task fields. `title` is required; `status` defaults
+            to `ToDo` and `priority` to `Medium`.
+
+    Returns:
+        The stored task with its server-assigned `id`, `created_at` and
+        `updated_at`, a computed `is_overdue`, and `comment_count` of 0.
+
+    Example:
+        curl -X POST http://localhost:8000/tasks -H "Content-Type: application/json" -d '{"title":"Ship release notes","priority":"High"}'
+    """
     return storage.add_task(payload)
 
 
 @app.get("/tasks/{task_id}", response_model=TaskResponse, tags=["tasks"])
 def get_task(task_id: str) -> TaskResponse:
+    """Fetch a single task by id.
+
+    Args:
+        task_id: Server-assigned UUID string.
+
+    Returns:
+        The task, with its live `comment_count` and computed `is_overdue`.
+
+    Raises:
+        HTTPException: 404 when no task has that id.
+
+    Example:
+        curl http://localhost:8000/tasks/<id>
+    """
     task = storage.get_task_by_id(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
@@ -91,6 +147,29 @@ def get_task(task_id: str) -> TaskResponse:
 
 @app.patch("/tasks/{task_id}", response_model=TaskResponse, tags=["tasks"])
 def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
+    """Partially update a task.
+
+    Only the fields present in the request body change. An explicit
+    `"tags": null` clears the tag list to `[]`; omitting `tags` leaves it
+    untouched.
+
+    Args:
+        task_id: Server-assigned UUID string.
+        payload: The subset of fields to change.
+
+    Returns:
+        The updated task.
+
+    Raises:
+        HTTPException: 404 when no task has that id. Checked *before* the
+            transition rule, so an unknown id answers 404 rather than 422.
+        HTTPException: 422 when `status` is present and the requested
+            transition is not in `VALID_TRANSITIONS`. The detail lists the
+            allowed transitions.
+
+    Example:
+        curl -X PATCH http://localhost:8000/tasks/<id> -H "Content-Type: application/json" -d '{"status":"InProgress"}'
+    """
     if payload.status is not None:
         existing = storage.get_task_by_id(task_id)
         if existing is None:
@@ -105,6 +184,24 @@ def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
 
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["tasks"])
 def delete_task(task_id: str) -> None:
+    """Delete a task and its comments, keeping its activity.
+
+    `GET /tasks/{task_id}/activity` 404s afterwards — the sub-resource goes
+    with the resource — but the history, including the `deleted` entry, stays
+    readable on `GET /activity`.
+
+    Args:
+        task_id: Server-assigned UUID string.
+
+    Returns:
+        None. The route answers 204 with an empty body.
+
+    Raises:
+        HTTPException: 404 when no task has that id.
+
+    Example:
+        curl -X DELETE http://localhost:8000/tasks/<id>
+    """
     if not storage.delete_task(task_id):
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
 
@@ -116,7 +213,25 @@ def delete_task(task_id: str) -> None:
     tags=["comments"],
 )
 def create_comment(task_id: str, payload: CommentCreate) -> CommentResponse:
-    """Append a comment to a task. Commenting does not change the task itself."""
+    """Append a comment to a task. Commenting does not change the task itself.
+
+    A `commented` activity entry is recorded, but the task's `updated_at` is
+    deliberately left alone: commenting on a task is not editing it.
+
+    Args:
+        task_id: Server-assigned UUID string.
+        payload: `body` is required, trimmed, max 2000 chars. `author` is
+            optional, max 80 chars; blank is stored as `null`.
+
+    Returns:
+        The stored comment with its server-assigned `id` and `created_at`.
+
+    Raises:
+        HTTPException: 404 when no task has that id.
+
+    Example:
+        curl -X POST http://localhost:8000/tasks/<id>/comments -H "Content-Type: application/json" -d '{"author":"alice","body":"Blocked on the migration."}'
+    """
     comment = storage.add_comment(task_id, payload)
     if comment is None:
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
@@ -126,7 +241,21 @@ def create_comment(task_id: str, payload: CommentCreate) -> CommentResponse:
 @app.get("/tasks/{task_id}/comments", response_model=list[CommentResponse], tags=["comments"])
 def list_comments(task_id: str) -> list[CommentResponse]:
     """A task's comments, oldest first. Unknown task is 404, not an empty list —
-    a mistyped id should not look like a task nobody has commented on."""
+    a mistyped id should not look like a task nobody has commented on.
+
+    Args:
+        task_id: Server-assigned UUID string.
+
+    Returns:
+        The task's comments oldest first; an empty list if the task exists but
+        has none.
+
+    Raises:
+        HTTPException: 404 when no task has that id.
+
+    Example:
+        curl http://localhost:8000/tasks/<id>/comments
+    """
     comments = storage.get_comments(task_id)
     if comments is None:
         raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
@@ -141,6 +270,18 @@ def list_activity(task_id: str) -> list[ActivityEntry]:
     `404` for an unknown task, including one that has been deleted — the task
     resource is gone, so its sub-resource is too. Its entries stay readable on
     `GET /activity`.
+
+    Args:
+        task_id: Server-assigned UUID string.
+
+    Returns:
+        The task's activity entries, newest first.
+
+    Raises:
+        HTTPException: 404 when no task has that id, including a deleted one.
+
+    Example:
+        curl http://localhost:8000/tasks/<id>/activity
     """
     entries = storage.get_activity(task_id)
     if entries is None:
@@ -165,5 +306,20 @@ def list_all_activity(
     there is nothing.
 
     `limit` is capped rather than unbounded because the log only grows.
+
+    Args:
+        kind: Filter to one of `created`, `updated`, `commented`, `deleted`.
+        task_id: Filter to a single task. An id that no longer exists — or
+            never did — returns `[]` rather than 404.
+        limit: Maximum entries to return, newest first. Defaults to
+            `storage.DEFAULT_ACTIVITY_LIMIT` and is bounded by
+            `storage.MAX_ACTIVITY_LIMIT`; out-of-range values are rejected by
+            FastAPI with 422.
+
+    Returns:
+        Activity entries across every task, newest first.
+
+    Example:
+        curl "http://localhost:8000/activity?kind=deleted&limit=20"
     """
     return storage.get_all_activity(kind=kind, task_id=task_id, limit=limit)

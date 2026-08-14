@@ -61,6 +61,9 @@ def today_utc() -> date:
     Overdue is judged against UTC because created_at/updated_at are UTC too;
     using the server's local date would make the rule depend on where the
     process happens to run.
+
+    Returns:
+        Today's date in UTC.
     """
     return datetime.now(timezone.utc).date()
 
@@ -73,6 +76,14 @@ def compute_is_overdue(due_date: Optional[date], status: TaskStatus) -> bool:
     - Due *today* is not overdue; you still have the day to finish it.
     - Done tasks are never overdue, even if completed late. The board uses
       "overdue" to mean "needs attention now", and finished work does not.
+
+    Args:
+        due_date: The task's due date, or None if it has none.
+        status: The task's current status.
+
+    Returns:
+        True only when a due date exists, is strictly before today in UTC, and
+        the status is not `Done`.
     """
     if due_date is None:
         return False
@@ -221,6 +232,14 @@ def describe_value(value: object) -> Optional[str]:
 
     Long values are truncated, so pasting an essay into a description does not
     store a second copy of it in the log.
+
+    Args:
+        value: Any task field value — enum, date, list, string or None.
+
+    Returns:
+        A string preview, or None when the value is None or renders empty. A
+        rendered value longer than `MAX_ACTIVITY_VALUE_LENGTH` is cut and
+        suffixed with an ellipsis character.
     """
     if value is None:
         return None
