@@ -13,6 +13,92 @@ Storage is in-process Python dictionaries. There is no database, no
 authentication and no deployment configuration — see
 [Conventions and limitations](#conventions-and-current-limitations).
 
+## Final Project
+
+Branch reviewed: `final-project`
+
+### What this submission demonstrates
+
+- The existing Task Tracker still runs inside the intended course scope — no
+  product feature was added.
+- CI runs the pytest suite on push and pull request, with no
+  `continue-on-error`, no `|| true`, and no skipped pytest.
+- The Docker image builds and runs, with `/health` returning 200 both through
+  the published port and from inside the container, as a non-root user.
+- AI review, security and ownership evidence lives in `docs/`.
+
+### How to run locally
+
+```bash
+python -m venv venv
+```
+
+```bash
+venv\Scripts\activate
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Then serve the frontend separately:
+
+```bash
+python -m http.server 5500 --directory frontend
+```
+
+### How to run tests
+
+```bash
+pytest -v
+```
+
+125 tests, all passing.
+
+### How to run with Docker
+
+```bash
+docker build -t task-tracker:final .
+```
+
+```bash
+docker run -d --name tt-final -p 8000:8000 task-tracker:final
+```
+
+```bash
+curl http://localhost:8000/health
+```
+
+If port 8000 is already taken by a local uvicorn, map a different host port
+(`-p 8001:8000`) **and** change the port in the `curl` to match — otherwise you
+are testing the local server rather than the container.
+
+### Evidence files
+
+- [docs/release-evidence.md](docs/release-evidence.md)
+- [docs/final-ai-review.md](docs/final-ai-review.md)
+- [docs/ai-playbook.md](docs/ai-playbook.md)
+
+### AI assistance summary
+
+AI helped draft or review: CI workflows, the Dockerfile and `.dockerignore`,
+docstrings and README, a security review, and debugging.
+
+I verified the work by: running the full pytest suite, building and running the
+container and checking `/health` from inside it, querying `/openapi.json` and
+the live endpoints rather than reading the handlers, and grading every AI
+finding as Valid, False Positive or Noise.
+
+One AI suggestion I rejected or corrected: a review claimed the top-level
+`docs/*.md` files were superseded stubs and suggested deleting a set. They are
+deliberate pointers to `docs/midcourse/`, as `docs/README.md` states — acting on
+it would have deleted a graded deliverable. Recorded in
+[docs/final-ai-review.md](docs/final-ai-review.md).
+
 ## Prerequisites
 
 | Requirement | Version | Notes |
