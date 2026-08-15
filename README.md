@@ -116,8 +116,11 @@ root. Remove the container with `docker rm -f tt-dev`.
 
 The image contains only the interpreter, the installed dependencies and
 `app/`. Tests, the frontend, `docs/`, `.env` and git metadata are excluded by
-`.dockerignore`. Image size is reported in the Docker verify workflow log
-**[VERIFY]**.
+`.dockerignore`. Built and run locally on 2026-08-15: `docker images` reports
+**293MB** (`docker image inspect .Size` reports 68,732,880 bytes — the two differ
+because the build produces an attestation manifest list). All five security
+checks pass on observation; see
+[docker-security-log.md](docs/module4/docker-security-log.md).
 
 ## CI workflow summary
 

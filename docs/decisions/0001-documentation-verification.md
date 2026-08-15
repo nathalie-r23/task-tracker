@@ -107,9 +107,17 @@ with the risk.
 - **Probes are not tests.** The script that measured the 218-character tag value
   lived in a scratch directory and was thrown away. The finding survived; the check
   did not. Only the null-PATCH finding became a permanent regression test.
-- **Some claims stay unverifiable locally.** Docker Desktop would not start on the
-  development machine, so every statement about the image rests on CI runs
-  observed elsewhere. **[VERIFY]** the image has never been built or run locally.
+- **Some claims stay unverifiable — until they don't.** For most of this project
+  Docker Desktop would not start (WSL had no distributions installed), so every
+  statement about the image rested on CI runs observed elsewhere. That was
+  recorded as `[VERIFY]` rather than asserted. **Resolved 2026-08-15:** WSL was
+  installed, the engine came up, and the image was built and run locally — at
+  which point one of the five checks *failed*. `.dockerignore` was shipping ten
+  nested `__pycache__` directories into the image, because its bare patterns
+  matched only top-level entries. Neither a code read nor six weeks of green CI
+  had surfaced it, since a fresh runner checkout has no bytecode to exclude in
+  the first place. The `[VERIFY]` marker was doing real work: it held the
+  question open until the one check that could answer it became possible.
 
 ## 5. Consequences
 
@@ -155,11 +163,16 @@ code", not "the system is hardened".
 3. **Is CI actually green?** The README states the 3.11 pins are "both verified
    green". The pins are real and confirmed. The green status has not been observed
    from this machine — `gh` is not installed. **[VERIFY]** against the Actions tab.
-4. **What is the image size?** Reported by `docker-verify.yml` but never observed
-   locally. **[VERIFY]**
-5. **Should the `.dockerignore` assertion be repaired or removed?** It could test
-   the build context instead of the image, which would make it meaningful. Or it
-   could be renamed to describe what it actually proves.
+4. ~~**What is the image size?**~~ **Resolved.** Measured locally:
+   `docker images` reports **293MB**, `docker image inspect .Size` reports
+   **68,732,880 bytes**. The two disagree because the build produces an
+   attestation manifest list; both are recorded rather than choosing one.
+5. **Should the `.dockerignore` assertion be repaired or removed?** Still open,
+   and now sharper. Both assertions in `docker-verify.yml` are
+   non-discriminating on a runner: a fresh checkout has no `__pycache__` and none
+   of the other checked paths are ever copied into the runtime stage, so both
+   pass regardless of what `.dockerignore` contains. The underlying defect they
+   were meant to catch was real and was found by building locally instead.
 6. **Does `describe_value` truncation need fixing rather than documenting?** The
    docstring was narrowed to match the code. The alternative — truncating lists too
    — changes stored activity values and would need its own decision.
