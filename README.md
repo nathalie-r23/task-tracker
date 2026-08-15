@@ -103,7 +103,7 @@ it would have deleted a graded deliverable. Recorded in
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Python | **3.11** | What CI and the Docker image use, both verified green |
+| Python | **3.11** | What CI and the Docker image use. CI verified green — [run #14](https://github.com/nathalie-r23/task-tracker/actions/runs/31905311907); the image was built and run locally on 2026-08-15 |
 | Python (local dev) | 3.10.11 | The checked-in `venv/` — the suite passes on this too |
 | Docker | any recent | **Optional**, only for the container workflow |
 

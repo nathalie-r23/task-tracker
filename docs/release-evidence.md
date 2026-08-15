@@ -44,9 +44,12 @@ branch. Items that were **not** verified are marked as such rather than assumed.
   no `continue-on-error`, no `|| true`, no `--exit-zero`, pytest is not skipped
   and its output is not piped, and dependencies are installed from
   `requirements.txt`. A failing test therefore fails the check.
-- **Latest run link:** ☐ **NOT VERIFIED — author to complete.** `gh` is not
-  installed on this machine, so no workflow run has been observed from here.
-  Paste the latest green run URL from the Actions tab of the repository.
+- **Latest run link:**
+  <https://github.com/nathalie-r23/task-tracker/actions/runs/31905311907>
+  — CI run #14, **green**, 18s, commit `44096f9` on `final-project`. Confirmed
+  in the Actions tab by the author on 2026-08-15. The two preceding runs (#13
+  `4cc2fe8` on `final-project`, #12 `582ee81` on `ci-setup`) are also green, so
+  the branch has a clean run history rather than a single passing commit.
 - **Intentional red run (optional, from Module 4):** commit `75e5c8a` broke a
   health assertion deliberately and `48a6a95` reverted it. Both are pushed, so
   the two runs exist in the Actions history. Links not collected.
