@@ -12,9 +12,15 @@ venv
 .venv
 env
 
-# Python caches and build artifacts
-__pycache__
-*.py[cod]
+# Python caches and build artifacts.
+# The `**/` prefix is load-bearing: Docker matches ignore patterns against the
+# path relative to the build-context root, so a bare `__pycache__` matches only a
+# top-level entry. This repo has none — every cache sits under app/ — so the bare
+# patterns matched nothing and `COPY app ./app` shipped ten of them into the
+# image. Verified by building; CI could not catch it because a fresh checkout has
+# no bytecode to exclude in the first place.
+**/__pycache__
+**/*.py[cod]
 *$py.class
 *.egg-info
 .eggs
