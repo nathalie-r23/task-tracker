@@ -19,11 +19,12 @@ branch. Items that were **not** verified are marked as such rather than assumed.
 - **`/health` result:** `HTTP 200` —
   `{"status":"ok","timestamp":"2026-08-15T19:26:16.478474+00:00"}`
   `GET /docs` also returned `HTTP 200`.
-- **Frontend check:** ☐ **NOT VERIFIED — author to complete.** The frontend was
-  never opened in a browser during this release check. Serve it with
-  `python -m http.server 5500 --directory frontend`, open
-  <http://localhost:5500>, and record one sentence confirming the Kanban board
-  and the create/edit flow are still visible.
+- **Frontend check:** Served with
+  `python -m http.server 5500 --directory frontend` and opened at
+  <http://localhost:5500> with the API running on port 8000. The Kanban board
+  renders its three columns (To Do, In Progress, Done), a task can be created
+  and appears on the board, and an existing task can be opened and edited.
+  Verified in the browser by the author on 2026-08-15.
 - **Test command:** `venv\Scripts\python.exe -m pytest -q`
 - **Test result:** **125 passed, 3 warnings in 1.16s.** No failures.
   The three warnings are all the same benign one: Starlette deprecating
