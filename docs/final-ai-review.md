@@ -55,20 +55,39 @@ and both workflows. Seven findings were produced and graded. Full record:
 
 ## Manual security check
 
-☐ **AUTHOR TO COMPLETE.** The brief requires one human check that did not simply
-copy AI output. Three manual findings were recorded during the course and are
-already in `docs/security-review.md` §3 — echoed task ids in 404 responses,
-verbose validation text shown in the frontend, and undocumented network
-boundaries for the Docker deployment. Write up **one** of them here in your own
-words: what you looked at, what you found, and why it matters.
+**Finding M2 — a rejected drag shows the user the API's whole internal rule
+table.** Found by operating the app, not by reading it.
 
-One observation worth including, because it came from running rather than
-reading: the CI step asserting that `.dockerignore` exclusions were applied had
-been green for weeks and could not have failed. A fresh `actions/checkout`
-contains no `__pycache__` at all, so the assertion passes for want of anything to
-exclude. The defect it was meant to catch — ten bytecode directories shipping
-into the image — appeared the first time the image was built on a machine that
-had actually run the test suite.
+I dragged a task from To Do straight to Done in the browser. The card snapped
+back and a red banner appeared reading:
+
+> Invalid status transition from ToDo to Done. Allowed transitions:
+> `['Done->Done', 'Done->InProgress', 'InProgress->Done', 'InProgress->InProgress', 'ToDo->InProgress', 'ToDo->ToDo']`
+
+That message is built in `app/business_rules.py:42`, which assembles the 422
+detail by listing every pair in `VALID_TRANSITIONS` — so a rejected drag hands
+the end user the API's complete internal rule table. It is not an XSS risk,
+because the frontend inserts the detail with `textContent` rather than
+`innerHTML`, but it is far more internal detail than a user needs, and the same
+habit on a system with real business rules would leak valid values or schema
+information through an error message. I would keep the 422 and the specific
+reason, but shorten the message to name only the transitions available from the
+task's current status, leaving the full table in the server logs.
+
+**Why this counts as a human check.** The AI security review produced seven
+findings and this was not among them. It raised a related one — task ids echoed
+in 404 responses — and that was graded Noise. Neither review examined what a
+rejected drag actually shows a user, because answering that requires operating
+the application rather than reading it.
+
+**The same failure mode, from the other direction.** The CI step asserting that
+`.dockerignore` exclusions were applied had been green for weeks and could not
+have failed: a fresh `actions/checkout` contains no `__pycache__` at all, so the
+assertion passes for want of anything to exclude. The defect it was meant to
+catch — ten bytecode directories shipping into the image — appeared the first
+time the image was built on a machine that had actually run the test suite. Both
+findings were invisible to code reading and both surfaced only when something was
+run.
 
 ## One AI output I rejected or corrected
 
