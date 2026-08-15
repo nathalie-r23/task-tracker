@@ -1,8 +1,11 @@
 """Application entry point.
 
-Creates and configures the FastAPI application instance for the
-Module 1 Task Tracker API. Only the health endpoint is wired up at
-this stage — no CRUD, storage, or business logic yet.
+Creates and configures the FastAPI application instance, then defines the
+task, comment and activity routes on it. Health lives in its own router
+(`app.api.routes.health`); everything else is here.
+
+Storage is in-process and resets on restart — see `app.storage`. Status
+transition rules live in `app.business_rules`.
 """
 
 from fastapi import FastAPI, HTTPException, Query, status
@@ -38,7 +41,10 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(
         title="Task Tracker API",
-        description="Module 1 learning project — REST API skeleton.",
+        description=(
+            "Learning-project Kanban task tracker: tasks, comments and a "
+            "per-field activity log. In-memory storage, no auth, no database."
+        ),
         version="0.1.0",
     )
 
@@ -149,9 +155,10 @@ def get_task(task_id: str) -> TaskResponse:
 def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
     """Partially update a task.
 
-    Only the fields present in the request body change. An explicit
-    `"tags": null` clears the tag list to `[]`; omitting `tags` leaves it
-    untouched.
+    Only the fields present in the request body change. Omitting a key leaves
+    that field untouched; sending it as `null` clears it — `tags` to `[]`,
+    `description` to `""`, `assignee` and `due_date` to null. `title` is the
+    exception: it is required, so an explicit `"title": null` is a 422.
 
     Args:
         task_id: Server-assigned UUID string.
@@ -166,6 +173,8 @@ def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
         HTTPException: 422 when `status` is present and the requested
             transition is not in `VALID_TRANSITIONS`. The detail lists the
             allowed transitions.
+        RequestValidationError: 422, raised by FastAPI, when a field fails
+            validation — including an explicit `"title": null`.
 
     Example:
         curl -X PATCH http://localhost:8000/tasks/<id> -H "Content-Type: application/json" -d '{"status":"InProgress"}'

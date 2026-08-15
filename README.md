@@ -82,9 +82,9 @@ Tasks are cleared whenever the server restarts.
 pytest -v
 ```
 
-**122 tests** covering CRUD, validation, status-transition rules, due dates and
-overdue state, tags and tag filtering, text search, comments, and the activity
-log.
+**125 tests** covering CRUD, validation, status-transition rules, null-clearing
+semantics, due dates and overdue state, tags and tag filtering, text search,
+comments, and the activity log.
 
 ## Run with Docker
 
@@ -99,7 +99,9 @@ docker build -t task-tracker:dev .
 docker run -d --name tt-dev -p 8000:8000 task-tracker:dev
 ```
 
-If port 8000 is already taken by a local uvicorn, use `-p 8001:8000` instead.
+If port 8000 is already taken by a local uvicorn, use `-p 8001:8000` instead —
+and change the port in the `curl` below to match, or you will be checking the
+local server rather than the container.
 
 ```bash
 curl http://localhost:8000/health
@@ -124,7 +126,7 @@ Two workflows, neither of which deploys anything.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | every `push` and `pull_request` | Checks out, sets up Python 3.11, installs from `requirements.txt`, runs `pytest -v` |
-| [`docker-verify.yml`](.github/workflows/docker-verify.yml) | `push`/`pull_request` touching `Dockerfile`, `.dockerignore`, `requirements.txt` or `app/**`, plus manual dispatch | Builds the image, starts the container, checks `/health` through the port mapping and from inside, asserts the user is `app`, and asserts `.dockerignore` exclusions applied |
+| [`docker-verify.yml`](.github/workflows/docker-verify.yml) | `push`/`pull_request` touching `Dockerfile`, `.dockerignore`, `requirements.txt` or `app/**`, plus manual dispatch | Builds the image, starts the container, checks `/health` through the port mapping and from inside, asserts the user is `app`, asserts only the `app` package shipped, and asserts no bytecode caches reached the image (the step that actually exercises `.dockerignore`) |
 
 Neither workflow uses `continue-on-error`, `|| true` or `--exit-zero`, and
 pytest output is not piped, so a failing test fails the check. This was proved
@@ -188,8 +190,8 @@ CLAUDE.md            Working notes for Claude Code sessions
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | UUID, server-assigned |
-| `title` | string | Required, trimmed, max 200 chars |
-| `description` | string | Defaults to `""` |
+| `title` | string | Required, trimmed, max 200 chars. On `PATCH`, an explicit `null` is `422` — there is nothing to clear it to |
+| `description` | string | Defaults to `""`; send `null` to clear it back to `""` |
 | `status` | enum | `ToDo` · `InProgress` · `Done` — case-sensitive on the wire |
 | `priority` | enum | `Low` · `Medium` · `High` |
 | `assignee` | string \| null | Optional |
@@ -255,6 +257,15 @@ Mid-course project documentation lives in [`docs/`](docs/README.md):
 - [verification.md](docs/midcourse/verification.md) — baseline, test results, manual checks, Break Tests
 - [reflection.md](docs/midcourse/reflection.md) — reflection on the AI-assisted workflow
 
-There is no `docs/decisions/` directory yet. The existing decision record is
-[mini-adr.md](docs/midcourse/mini-adr.md); a standalone technical note has not
-been written.
+Each of these five also exists as a short pointer file at the top level of
+`docs/` — deliberate, not duplication: the course brief names both locations,
+so the full documents live in `docs/midcourse/` and the top-level copies
+summarise and link to them. See [docs/README.md](docs/README.md) for the
+mapping. Keep both.
+
+Standalone technical notes live in [`docs/decisions/`](docs/decisions/):
+
+- [0001-documentation-verification.md](docs/decisions/0001-documentation-verification.md)
+  — how documentation claims are verified before publishing (**draft**)
+
+The broader design record remains [mini-adr.md](docs/midcourse/mini-adr.md).

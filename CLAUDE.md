@@ -7,7 +7,7 @@ Kanban Task Tracker (REST API + single-file frontend).
 
 | Piece | Version | Notes |
 |---|---|---|
-| Python | 3.10.11 **[VERIFY]** | Local `venv/pyvenv.cfg` says 3.10.11; `README.md` says "Python 3.9+ (developed against 3.10)". The course brief says 3.11 — nothing in this repo pins 3.11. |
+| Python | 3.10.11 local / 3.11 CI | Local `venv/` is 3.10.11 and the suite passes on it. CI (`.github/workflows/ci.yml`) and the `Dockerfile` both pin 3.11. No config file enforces a floor. |
 | FastAPI | 0.139.0 | Pinned in `requirements.txt` |
 | Pydantic | v2 (2.13.4) | v2 idioms throughout: `ConfigDict`, `field_validator`, `computed_field` |
 | pydantic-settings | 2.14.2 | Backs `app/core/config.py` |
@@ -117,10 +117,14 @@ Two details that are easy to get wrong:
 
 ### Other enforced rules
 
-- `title`: required, trimmed, non-blank, max 200 chars.
+- `title`: required, trimmed, non-blank, max 200 chars. On `PATCH`, an explicit
+  `"title": null` is **422** — a required field has nothing to clear to.
 - `tags`: max 10 tags, each max 24 chars, trimmed, blanks rejected, duplicates dropped
   case-insensitively keeping the first spelling. On `PATCH`, an explicit `"tags": null`
   clears them to `[]`.
+- Null-clearing on `PATCH`, in one place: `tags` → `[]`, `description` → `""`,
+  `assignee` and `due_date` → null, `title` → 422. Omitting a key always leaves that
+  field untouched.
 - `is_overdue`: computed on every read, never stored — `due_date` strictly before today
   (UTC) **and** status is not `Done`. No due date → never overdue. Due *today* → not overdue.
 - `comment_count`: read-only, stamped by the storage layer from the live comment store.
@@ -128,8 +132,10 @@ Two details that are easy to get wrong:
   stored as `null`. Append-only — no edit, no delete.
 - Activity: one entry per changed field; kinds are `created`, `updated`, `commented`,
   `deleted`. Re-sending a field's current value records nothing. Commenting records an entry
-  but does **not** bump `updated_at`. Values are flattened to text and truncated at 80 chars.
-  `task_title` is a snapshot from the time of the event, not a live lookup.
+  but does **not** bump `updated_at`. Values are flattened to text; only plain strings
+  are truncated at 80 chars — enums, dates and tag lists render untruncated, so a full
+  tag list can exceed it. `task_title` is a snapshot from the time of the event, not a
+  live lookup.
 - Delete: removes the task's comments, **keeps** its activity, records a `deleted` entry.
   `GET /tasks/{id}/activity` then 404s; the history stays readable on `GET /activity`.
 - `GET /activity`: `limit` defaults to 50, capped at 200; never 404s (it is a log, not a
@@ -176,7 +182,10 @@ Do not do any of the following without asking first:
   none by design, and CORS is configured on that assumption.
 - **Add a database or any persistence layer** — storage is intentionally in-memory and
   resets on restart. No SQLAlchemy, no SQLite, no file-backed store.
-- **Add deployment steps** — no Docker, CI/CD, hosting config, or production settings.
+- **Add hosting or deployment steps** — no registry pushes, hosting config, or
+  production settings. Docker and GitHub Actions *are* now in scope (`Dockerfile`,
+  `.dockerignore`, `.github/workflows/`), but strictly to build, test and verify
+  locally and on CI runners. Nothing is published or deployed anywhere.
 - **Make major UI changes** — no framework, no build step, no splitting `index.html` apart,
   no redesign. Small, contained edits within the existing file only.
 

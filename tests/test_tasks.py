@@ -563,6 +563,48 @@ def test_patch_blank_tag_returns_422_and_leaves_task_untouched(client):
     assert client.get(f"/tasks/{created['id']}").json()["tags"] == ["keep"]
 
 
+def test_patch_title_to_null_returns_422_and_leaves_task_untouched(client):
+    # A required field has nothing to clear to, so null is a validation error
+    # rather than a 500 from rebuilding the task with a null title.
+    created = client.post("/tasks", json={"title": "Keep this title"}).json()
+
+    response = client.patch(f"/tasks/{created['id']}", json={"title": None})
+
+    assert response.status_code == 422
+    assert client.get(f"/tasks/{created['id']}").json()["title"] == "Keep this title"
+
+
+def test_patch_description_to_null_clears_it(client):
+    # Mirrors create, where a null description is stored as "".
+    created = client.post(
+        "/tasks", json={"title": "Clear my description", "description": "temporary"}
+    ).json()
+
+    response = client.patch(f"/tasks/{created['id']}", json={"description": None})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == ""
+
+
+def test_patch_nullable_fields_never_return_500(client):
+    # Every field that accepts null on the wire answers with a real status code:
+    # 200 when it clears, 422 when it cannot. None of them may 500.
+    created = client.post(
+        "/tasks",
+        json={
+            "title": "Null sweep",
+            "description": "d",
+            "assignee": "alice",
+            "due_date": "2026-01-01",
+            "tags": ["t"],
+        },
+    ).json()
+
+    for field in ("title", "description", "assignee", "due_date", "tags"):
+        response = client.patch(f"/tasks/{created['id']}", json={field: None})
+        assert response.status_code in (200, 422), f"{field} returned {response.status_code}"
+
+
 def test_list_filter_by_tag_returns_only_matching_tasks(client):
     client.post("/tasks", json={"title": "Has it", "tags": ["backend", "api"]})
     client.post("/tasks", json={"title": "Lacks it", "tags": ["frontend"]})

@@ -105,8 +105,13 @@ jobs:
           echo "$ID" | grep -q 'uid=1000(app)'
           echo "OK: non-root"
 
-      # --- Check 5: .dockerignore exclusions actually applied ---
-      - name: Assert excluded paths are absent from the image
+      # --- Check 5: only the app package shipped ---
+      # NOTE: this proves the narrowness of `COPY app ./app`, NOT .dockerignore.
+      # None of these paths are ever copied into the runtime stage, so this step
+      # would pass with .dockerignore deleted. The step that genuinely exercises
+      # .dockerignore is "Assert no bytecode caches shipped" below: app/__pycache__
+      # exists in a normal working copy and `COPY app ./app` would sweep it in.
+      - name: Assert only the app package shipped
         run: |
           OUT=$(docker run --rm task-tracker:dev sh -c 'for p in .env .git .github venv .venv tests frontend docs requirements.txt .pytest_cache README.md CLAUDE.md; do if [ -e "/app/$p" ]; then echo "LEAKED: $p"; else echo "absent: $p"; fi; done')
           echo "$OUT"
@@ -121,7 +126,10 @@ jobs:
           docker run --rm task-tracker:dev sh -c 'ls -a /app && test -f /app/app/main.py && test -f /app/app/business_rules.py'
           echo "OK: app package present"
 
-      - name: Assert no bytecode caches shipped
+      # The real .dockerignore test: `__pycache__` lives inside app/ in any working
+      # copy that has run the suite, so it reaches the build context and is excluded
+      # only because .dockerignore says so.
+      - name: Assert no bytecode caches shipped (.dockerignore working)
         run: |
           FOUND=$(docker run --rm task-tracker:dev sh -c "find /app -name '__pycache__' -o -name '*.pyc' | head")
           if [ -n "$FOUND" ]; then

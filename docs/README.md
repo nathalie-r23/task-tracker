@@ -31,4 +31,15 @@ The brief asks for two. Four were built, on the same workflow:
   verified byte-identical
 - Branch: `mid-course-project`
 
+The figures above describe the **mid-course** submission on branch
+`mid-course-project`. Module 4 work continues on `ci-setup`, where the suite
+stands at **125 tests**.
+
+## Module 4 additions
+
+| Document | What it is |
+|---|---|
+| [decisions/0001-documentation-verification.md](decisions/0001-documentation-verification.md) | Technical decision note — how documentation claims are verified before publishing (**draft**) |
+| [checklists/doc-claim-audit.md](checklists/doc-claim-audit.md) | Reusable checklist for running that audit (optional extension, not a required deliverable) |
+
 Setup, run and test instructions are in the [root README](../README.md).

@@ -127,10 +127,21 @@ class TaskUpdate(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def validate_title(cls, value: Optional[str]) -> Optional[str]:
+    def validate_title(cls, value: Optional[str]) -> str:
+        # An explicit `"title": null` is rejected, not ignored. Every other
+        # nullable field clears to an empty value; a task with no title has no
+        # such thing to clear to, so this is a 422 rather than a silent no-op.
+        # (Omitting the key entirely still leaves the title untouched.)
         if value is None:
-            return value
+            raise ValueError("title must not be null")
         return _validate_title(value)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: Optional[str]) -> str:
+        # `"description": null` clears it, mirroring create, where a null
+        # description is stored as "". A stored description is never null.
+        return "" if value is None else value
 
     @field_validator("tags")
     @classmethod
@@ -237,9 +248,11 @@ def describe_value(value: object) -> Optional[str]:
         value: Any task field value — enum, date, list, string or None.
 
     Returns:
-        A string preview, or None when the value is None or renders empty. A
-        rendered value longer than `MAX_ACTIVITY_VALUE_LENGTH` is cut and
-        suffixed with an ellipsis character.
+        A string preview, or None when the value is None or renders empty.
+        Only plain-string values are length-checked: one longer than
+        `MAX_ACTIVITY_VALUE_LENGTH` is cut and suffixed with an ellipsis
+        character. Enums, dates and lists return their rendered form
+        untruncated, so a full tag list can exceed that length.
     """
     if value is None:
         return None
