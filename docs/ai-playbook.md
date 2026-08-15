@@ -1,48 +1,57 @@
 # My AI Coding Playbook
 
-*Personal working rules. One page. Revise when a rule breaks rather than when it
-feels stale.*
-
-> **STATUS: SCAFFOLD.** Every italic prompt below is a question to answer in your
-> own words, not text to keep. Delete each one as you replace it. The Decision
-> Card must be filled in by the author — a card completed by the tool is the one
-> artifact here a grader could reasonably call fabricated.
+*Personal working rules. Revise when a rule breaks, not when it feels stale.*
 
 ## 1. When I reach for AI first
 
-- _[Task shape] — because [what makes it a good fit: volume, mechanical
-  repetition, breadth I can't hold at once, a first draft I'll rewrite]_
-- _[Task shape] — because [what I'd otherwise spend disproportionate time on]_
-- _[Task shape] — because [the cost of a wrong answer here is low and visible]_
+- **Mechanical work spread across many files** — docstrings for 24 functions, a
+  README rewrite — because it is a first draft I will rewrite anyway, and a wrong
+  sentence is visible.
+- **Verification sweeps**, checking documentation claims against a running app,
+  because it is tedious at scale and the result is checkable. Five claims here
+  survived careful reading and turned out false when executed.
+- **Drafting infrastructure** — Dockerfile, CI YAML — because I can confirm the
+  result by building and running it rather than by trusting it.
 
 ## 2. When I do not reach for AI
 
-- _[Task shape] — because [what I'd lose: understanding I need later, a judgement
-  only I can make, an assumption I'd inherit without noticing]_
-- _[Task shape] — because [verifying the output would cost more than doing it]_
-- _[Task shape] — because [the failure would be silent rather than loud]_
+- **Anything I cannot verify by running something**, because the failure is
+  silent. A `.dockerignore` defect passed CI for weeks: a fresh checkout has no
+  bytecode to exclude, so the assertion could not fail.
+- **Scope and product decisions** — whether to add auth, whether to cap a field —
+  because those are judgements about what the project should be, not facts about
+  what it is.
+- **Reading a large unfamiliar file to understand it**, because I end up with a
+  summary I trust instead of understanding I own.
 
 ## 3. My non-negotiables
 
-- _[Thing I will not do, stated as an action a teammate could observe] — because
-  [the specific harm]_
-- _[Boundary on what leaves my machine] — because [what it would expose]_
-- _[Boundary on what I'll sign my name to] — because [what a signature claims]_
+- I do not let a tool read `.env`, credential files, or anything I have not
+  opened myself first. A tool read `.env` during this course and the contents
+  were harmless by luck of contents, not by process.
+- I do not sign an attestation I have not earned. If I have not read the code,
+  the honest answer is "no", not a blank.
+- I do not let a tool change pinned dependencies, CI, or `app/` without my
+  explicit approval, one change at a time.
 
 ## 4. My review rules
 
-- Before accepting: _[the specific check I run — what I execute, read, or
-  compare, not "I review it"]_
-- Before committing: _[what must be true — tests, a trace I've followed, a claim
-  I've verified rather than assumed]_
-- When AI and I disagree: _[what settles it, and who decides]_
+- **Before accepting:** if it is a claim about behaviour — a status code, a
+  limit, a validation outcome — I run it and record the command. Reading the
+  handler is not verification.
+- **Before committing:** the full suite passes, and I can say what changed and
+  why in one sentence.
+- **When AI and I disagree:** whoever can produce a command that settles it
+  wins. If neither can, it stays marked `[VERIFY]` rather than being asserted.
 
 ## 5. What I am still figuring out
 
-- _[An open question about my own practice, phrased so I'd know when it's
-  answered]_
-- _[A habit I suspect is wrong but haven't tested]_
-- _[A judgement I currently make by feel and want a rule for]_
+- Whether my review hit-rate comes from the tool or from grading every finding.
+  Seven security findings, three graded Valid — I cannot separate the two causes
+  without running the same review twice and grading only one.
+- Whether I retire `[VERIFY]` markers as fast as I add them. One sat unresolved
+  for weeks until the Docker engine finally started.
+- How much of a 2160-line file I have to read before I can honestly sign for it.
 
 ---
 
@@ -50,35 +59,24 @@ feels stale.*
 
 - For a new feature I reach for: ___
 - For a code review I reach for: ___
-- For debugging I reach for: ___
-- For infrastructure I reach for: ___
-- I will never paste ___ into an AI tool.
-- My one rule is: ___
-
----
+- For debugging I reach for: **Claude Code** — every real defect I found this
+  course came from running something, not reading it.
+- For infrastructure I reach for: **general chat to author, a terminal tool to
+  verify** — authoring is a reasoning problem, verifying is an execution problem,
+  and the second is where the bugs were.
+- I will never paste **credential or configuration files, or command output
+  containing personal identifiers,** into an AI tool.
+- My one rule is: **a claim about behaviour is not verified until I have run it
+  and recorded the command.**
 
 ## Re-read commitment
 
-I will re-read this playbook on **___ (30 days from ___)**. At that re-read I
-will check: which rules I actually followed, which I broke and why, and whether
-any rule is still here because it sounds right rather than because it earned its
-place. A rule I have not applied in 30 days gets deleted or rewritten.
+I will re-read this playbook on **2026-09-15**, thirty days from today. At that
+re-read I will check which rules I actually followed, which I broke and why, and
+whether any rule is still here because it sounds right rather than because it
+earned its place. A rule I have not applied in thirty days gets deleted or
+rewritten.
 
 ---
 
-*Last revised: ___*
-
-<!--
-Course evidence available for sections 1-5 and the Decision Card, in your own
-documents — pull from these rather than reconstructing from memory:
-
-  docs/governance-retrospective.md §1.1  three observed sharing incidents
-  docs/module4/annotated-review-log.md   review comments graded Useful/Noise/Wrong,
-                                         including the one graded Wrong
-  docs/module4/docker-security-log.md    the check that failed only when run
-  docs/security-review.md                seven findings graded, three Valid
-  docs/architecture.md                   context-strategy verdict and rule
-  docs/final-ai-review.md                the AI output that was rejected
-
-Delete this comment before submitting.
--->
+*Last revised: 2026-08-16*
