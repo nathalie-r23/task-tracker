@@ -44,4 +44,12 @@ stands at **125 tests**.
 | [module4/docker-security-log.md](module4/docker-security-log.md) | Non-root, slim base, no baked secrets — **claims pending evidence**, engine would not start locally |
 | [checklists/doc-claim-audit.md](checklists/doc-claim-audit.md) | Reusable checklist for running that audit (optional extension, not a required deliverable) |
 
+## Module 5
+
+| Document | What it is |
+|---|---|
+| [security-review.md](security-review.md) | Read-only security review, AI findings graded Valid / False Positive / Noise, reconciliation and top-3 backlog |
+| [governance-retrospective.md](governance-retrospective.md) | What was shared with AI tools, what was received, and three personal usage rules. **One tool audited of four; the line-by-line attestation is unsigned** |
+| [decisions/comments-feature-plan.md](decisions/comments-feature-plan.md) | Gap analysis of the comments feature against a supplied spec — the feature already exists; `author` is the only delta |
+
 Setup, run and test instructions are in the [root README](../README.md).
