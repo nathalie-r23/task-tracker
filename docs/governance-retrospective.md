@@ -28,6 +28,19 @@ Risk rubric:
 | Frontend code | 3 | **Low** | `frontend/index.html` has a hardcoded `http://localhost:8000` and no keys, analytics IDs or third-party tokens | Fine as-is. On a real frontend, strip API keys and endpoint URLs — those are the assets that live in client code |
 | Dockerfile and CI YAML | 4 | **Low** here · **Medium as a habit** | Verified clean: no `ENV`/`ARG` carrying credentials, both workflows set `permissions: contents: read`, no `secrets.*` references. But CI config is where real projects keep secret names, registry credentials and deploy targets | Grep for `secrets.`, `env:` and registry URLs before pasting. Share job structure, redact the rest |
 | Real external data used by mistake | — | **See §1.1** | Three incidents observed in-session; none reached the High tier, but all three are habits that would | See §1.1 |
+| *(GitHub Copilot — what I shared)* | ☐ | ☐ | ☐ *(what was shared, and whether any incident occurred)* | ☐ |
+| *(Codex App — what I shared)* | ☐ | ☐ | ☐ | ☐ |
+| *(Cursor — what I shared)* | ☐ | ☐ | ☐ | ☐ |
+
+**The three rows above are unfilled.** For each tool, record what you shared,
+whether any incident occurred, and a risk level using the same rubric. The
+minimum honest entry is "used for X, no incidents recalled" — but mark it as
+*recall*, not transcript evidence, because those are different claims. Cursor and
+Copilot both retain chat history; ten minutes of scrolling turns "none recalled"
+into "none found."
+
+**The one question that could reach High:** did any of them ever receive a
+`.env`, a credential, or a stack trace from a project that was not this toy?
 
 ### 1.1 Incidents observed in this session
 
@@ -54,11 +67,14 @@ repo weren't a toy."
 
 | Generated thing | Module | Where it lives now | Do I understand it line by line? |
 |---|---|---|---|
-| Backend models and validators | 2 | `app/models.py` — incl. `TaskUpdate.validate_title` and `validate_description` at :128-144, added this session | **Unsigned** — see §2.1 |
-| Frontend board and drag-and-drop logic | 3 | `frontend/index.html` (2160 lines) | **Unsigned** |
-| CI workflow | 4 | `.github/workflows/ci.yml`, `docker-verify.yml` | **Unsigned** |
-| Dockerfile | 4 | `Dockerfile`, `.dockerignore` | **Unsigned** |
-| Security findings and plans | 5 | `docs/security-review.md` | **Unsigned** |
+| Backend models and validators | 2 | `app/models.py` — incl. `TaskUpdate.validate_title` and `validate_description` at :128-144, added this session | ☐ *(answer: Yes / No / Partial — see §2.1 for what a Yes claims)* |
+| Frontend board and drag-and-drop logic | 3 | `frontend/index.html` (2160 lines) | ☐ *(answer: Yes / No / Partial)* |
+| CI workflow | 4 | `.github/workflows/ci.yml`, `docker-verify.yml` | ☐ *(answer: Yes / No / Partial)* |
+| Dockerfile | 4 | `Dockerfile`, `.dockerignore` | ☐ *(answer: Yes / No / Partial)* |
+| Security findings and plans | 5 | `docs/security-review.md` | ☐ *(answer: Yes / No / Partial)* |
+
+Add a half-sentence to anything that is not a clean Yes. A **No** is a
+legitimate entry and a more useful retrospective record than an unexamined Yes.
 
 ### 2.1 Why this column is unsigned
 
@@ -149,8 +165,10 @@ because they were written out at the end of the session that produced them.
 ## 4. What this retrospective does not cover
 
 - **Three of four tools.** Copilot, Codex and Cursor received code and context
-  during this course and have no equivalent record. Any incident in those
-  sessions is undocumented.
-- **The line-by-line attestation** in §2 is unsigned.
+  during this course. Placeholder rows exist in §1 but are **unfilled**, so any
+  incident in those sessions remains undocumented. This scope limit stands until
+  those three rows carry content.
+- **The line-by-line attestation** in §2 is **unanswered** — five checkboxes
+  awaiting Yes / No / Partial.
 - **Modules 2 and 3** are covered only by the summary rows in §1; the detailed
   incident record in §1.1 is from a single Module 4/5 session.
