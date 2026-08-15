@@ -2,24 +2,83 @@
 
 Three required checks: **non-root**, **slim base**, **no baked secrets**.
 
-## Status: UNVERIFIED LOCALLY — [VERIFY]
+## Status: VERIFIED LOCALLY — 2026-08-15
 
-Docker Desktop is installed on the development machine but the engine would not
-start: every API call returned `500 Internal Server Error` over roughly 25
-minutes, and `%LOCALAPPDATA%\Docker\wsl` does not exist, which points at
-incomplete first-run WSL setup. **No image has been built or run locally.**
+The engine would not start for most of this project: every API call returned
+`500 Internal Server Error`, because WSL had no distributions installed
+(`wsl -l -v` reported none). After WSL was installed the `docker-desktop` distro
+came up and the engine responded — `Server: 29.7.2`.
 
-The three statements below are written from the `Dockerfile` and `.dockerignore`
-as committed, and from the assertions in
-[`docker-verify.yml`](../../.github/workflows/docker-verify.yml). They are
-**claims pending evidence**, not observations. Fill in the evidence column from a
-real run before submitting.
+The image was then **built and run on the development machine**. The three
+required checks below are **observations**, not claims.
+
+**One check failed.** See §"Finding D1" — bytecode caches shipped into the image.
+This was invisible until the build actually ran, and it is invisible in CI for
+the reason given there.
+
+**Image:** `task-tracker:dev` · built from `Dockerfile` at commit `9a86a43`
+**Size:** `docker images` reports **293MB**; `docker image inspect .Size` reports
+**68,747,439 bytes (~65.6MB)**. The two disagree because the build produced an
+attestation manifest list; the 293MB figure is the on-disk uncompressed total.
+Both are recorded rather than choosing one.
+**Port note:** mapped `-p 8001:8000` because port 8000 was occupied by a local
+uvicorn — the exact clash `README.md` warns about. All `curl` checks below used
+8001 accordingly.
 
 ## The log
 
-| Check | Claim | Basis today | Evidence to attach |
-|---|---|---|---|
-| **Non-root** | Runs as `app` (uid 1000, gid 1000); `USER app` precedes `CMD`; the container owns `app/` but not `/opt/venv` | `Dockerfile:32,41,43` | `docker exec tt-dev whoami` → `app`; `docker exec tt-dev id` → `uid=1000(app)` |
+| Check | Result | Observed evidence |
+|---|---|---|
+| **Non-root** | **PASS** | `docker exec tt-dev whoami` → `app`. `docker exec tt-dev id` → `uid=1000(app) gid=1000(app) groups=1000(app)`. Image config: `user=app` |
+| **Slim base** | **PASS** | `docker image inspect` → `cmd=["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]`, `ports={"8000/tcp":{}}`. No `--reload`. Built from `python:3.11-slim` in both stages; pip and build tooling confined to the discarded builder |
+| **No baked secrets** | **PASS** | All thirteen checked paths absent from `/app`: `.env`, `.git`, `.github`, `venv`, `.venv`, `tests`, `frontend`, `docs`, `requirements.txt`, `.pytest_cache`, `README.md`, `CLAUDE.md`, `AGENTS.md`. Positive control passed — `/app/app/main.py` and `/app/app/business_rules.py` both present, so the absences are real, not an empty image |
+| **Health served** | **PASS** | Via published port: `curl http://localhost:8001/health` → `{"status":"ok","timestamp":"2026-08-15T15:44:08.560475+00:00"}`, responding within 1s. From inside the container: `docker exec tt-dev python -c "...urlopen('http://127.0.0.1:8000/health')"` → same shape, confirming uvicorn bound `0.0.0.0` rather than a host process answering |
+| **No bytecode shipped** | **FAIL** | See Finding D1 |
+
+## Finding D1 — `.dockerignore` does not exclude nested `__pycache__`
+
+**Severity: Low** (no secret exposure; stale bytecode and wasted image layers)
+
+Ten bytecode entries shipped into the image:
+
+```
+/app/app/__pycache__/            /app/app/api/__pycache__/
+/app/app/api/routes/__pycache__/ ... including storage, models,
+health and a stale tasks.cpython-310.pyc
+```
+
+**Root cause.** `.dockerignore:16` is a bare `__pycache__`, and `:17` a bare
+`*.py[cod]`. Docker matches ignore patterns against the path relative to the
+build-context root, so a bare pattern matches **only a top-level entry**. There
+is no top-level `__pycache__` in this repo — every cache is nested under `app/`,
+so nothing matched and `COPY app ./app` (`Dockerfile:41`) copied them all.
+
+**Why CI never caught it.** `docker-verify.yml` has an "Assert no bytecode caches
+shipped" step, and this document previously described it as the check that
+genuinely exercises `.dockerignore`. That was half right. On a GitHub runner,
+`actions/checkout` produces a fresh tree with **no `__pycache__` at all** — git
+does not track it — so the step passes because there is nothing to exclude, not
+because exclusion works. **Both** `.dockerignore` assertions in that workflow are
+therefore non-discriminating in CI, and the defect only appears on a developer
+machine that has run the test suite.
+
+**Aggravating detail.** The shipped files are `cpython-310` bytecode from the
+local 3.10 venv, inside an image running Python 3.11. Python ignores bytecode
+with a mismatched magic number, so it is inert — but it is dead weight built from
+a different interpreter. One entry, `tasks.cpython-310.pyc`, is a cache for a
+route module that no longer exists in `app/api/routes/`.
+
+**Proposed fix — NOT APPLIED.** Two lines in `.dockerignore`:
+
+| Line | Current | Proposed |
+|---|---|---|
+| 16 | `__pycache__` | `**/__pycache__` |
+| 17 | `*.py[cod]` | `**/*.py[cod]` |
+
+Not applied because `AGENTS.md` §4 and `CLAUDE.md` §7 both require explicit
+approval before changing `.dockerignore`. Verification after applying: rebuild
+and re-run the `find /app -name '__pycache__' -o -name '*.pyc'` check, which must
+return empty on a machine that has run the test suite.
 | **Slim base** | `python:3.11-slim` pinned for both builder and runtime; no `python:latest`; pip, its cache and build tooling stay in the discarded builder stage | `Dockerfile:6,24`; `PIP_NO_CACHE_DIR=1` at `:9` | Build log showing both `FROM` lines; `docker image inspect task-tracker:dev --format '{{.Size}}'` |
 | **No baked secrets** | `.env*` excluded via `.dockerignore`; no `ARG`/`ENV` carries a credential; configuration is supplied at runtime through environment variables | `.dockerignore:8`; the only `ENV`s are `PATH`, `PYTHONUNBUFFERED`, `PYTHONDONTWRITEBYTECODE`, `PIP_*` | Output of the "only the app package shipped" step showing `absent: .env` |
 
