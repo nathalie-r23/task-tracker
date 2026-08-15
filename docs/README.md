@@ -40,6 +40,8 @@ stands at **125 tests**.
 | Document | What it is |
 |---|---|
 | [decisions/0001-documentation-verification.md](decisions/0001-documentation-verification.md) | Technical decision note — how documentation claims are verified before publishing (**draft**) |
+| [module4/annotated-review-log.md](module4/annotated-review-log.md) | Every Claude review comment categorised Useful / Noise / Wrong |
+| [module4/docker-security-log.md](module4/docker-security-log.md) | Non-root, slim base, no baked secrets — **claims pending evidence**, engine would not start locally |
 | [checklists/doc-claim-audit.md](checklists/doc-claim-audit.md) | Reusable checklist for running that audit (optional extension, not a required deliverable) |
 
 Setup, run and test instructions are in the [root README](../README.md).
