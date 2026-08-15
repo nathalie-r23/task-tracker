@@ -75,12 +75,37 @@ Recorded from the reviewer's own manual pass.
 | ID | Finding | File evidence | Grade |
 |---|---|---|---|
 | M1 | Task ids echoed back in 404 responses | `app/main.py:150` and ten further `HTTPException` sites | **Overlaps AI S3** — see §4 |
-| M2 | Verbose validation text shown in the frontend | **needs evidence** — no file/line recorded | Low; information disclosure through error surfaces |
-| M3 | Network boundaries for the Docker deployment are undocumented | **needs evidence** — deployment context, not a code location | Low; documentation gap |
+| M1 | Task ids echoed back in 404 responses | `app/main.py:150` and ten further `HTTPException` sites | **Overlaps AI S3** — see §4 |
+| M2 | Verbose validation text shown in the frontend | `frontend/index.html:1305`, :1499, :1510, :1844; source `app/business_rules.py:42` | **Confirmed, Low** |
+| M3 | Network boundaries for the Docker deployment are undocumented | `Dockerfile:45`, :49; `app/main.py:56-57` | **Confirmed as a documentation gap, Low** |
 
-M2 and M3 are marked **needs evidence** rather than confirmed: neither carries a
-file path or line number, and M3 concerns deployment context that does not exist
-in this repository (nothing is deployed).
+### M2 — evidence located
+
+The frontend takes the server's `detail` string verbatim
+(`frontend/index.html:1305`) and renders it through `showFieldError` (:1499),
+`showFormError` (:1510) and `showCommentError` (:1844).
+
+All three use `textContent`, so there is **no XSS here** — this is purely about
+verbosity. The most verbose source is `app/business_rules.py:42`, whose 422
+detail enumerates *every* allowed status transition. A user who drags a card
+from ToDo to Done sees the complete internal transition allow-list in a banner.
+
+Harmless in this application — the rules are public and documented in
+`README.md`. It is listed because the *pattern* of piping server error strings
+straight to the UI leaks internal structure on systems where the rules are not
+public.
+
+### M3 — evidence located
+
+The gap is real but is documentation, not configuration. `Dockerfile:45` exposes
+port 8000 and `:49` binds uvicorn to `0.0.0.0`, which is correct inside a
+container but is nowhere stated as deliberate. `app/main.py:56-57` restricts CORS
+to localhost origins plus `"null"`, which assumes the browser and the API share a
+host — an assumption that silently breaks the moment the container is reached
+from anywhere other than the Docker host.
+
+Nothing is deployed, so there is no live boundary to audit. Recording the
+assumption is the action, not changing it.
 
 ---
 
@@ -107,20 +132,33 @@ A separate AI review (different tool) reported **OSV-backed dependency
 advisories for `python-dotenv` and `pytest`**, plus CI/Docker supply-chain
 hardening around tag pins, image pins and unhashed installs.
 
-These are **not confirmed** and are deliberately excluded from §5:
+**RESOLVED — 2026-08-15.** An advisory lookup was run. Both advisories are real,
+and **this repository is already on the patched version of each**:
 
-- The reviewer states the advisories were not independently reproduced beyond
-  checking pinned versions and workflow usage.
-- The review recorded in this document reached the **opposite** conclusion on
-  dependencies — §2 lists them as clean on the grounds that all seven pins are
-  exact `==`. Pinning is not the same as being unaffected by an advisory, so
-  both statements can be true, but they have not been reconciled.
-- No advisory ID (CVE or GHSA) was recorded for either package.
+| Package | Pinned | Advisory | Affected range | This repo |
+|---|---|---|---|---|
+| `python-dotenv` | **1.2.2** | CVE-2026-28684 / GHSA-mf9w-mj56-hr94 — symlink following in `set_key` allows arbitrary file overwrite via cross-device rename fallback (Medium) | **< 1.2.2** | **Not affected.** 1.2.2 *is* the fix |
+| `pytest` | **9.1.1** | CVE-2025-71176 / GHSA-6w46-j5rx-g56g — predictable `/tmp/pytest-of-{user}` directory permits local DoS or privilege gain on UNIX | **< 9.0.3** | **Not affected.** Also a dev-only test runner, not shipped in the image |
 
-To resolve: run an advisory lookup and record the identifiers, affected version
-ranges, and whether `python-dotenv 1.2.2` and `pytest 9.1.1` actually fall in
-them. Note that `AGENTS.md` §4 and `CLAUDE.md` forbid changing pinned versions
-without explicit approval, so an upgrade is a scope decision, not a fix.
+**Verdict: the second review's dependency findings are False Positives for this
+repository.** The advisories exist at the *package* level; the finding did not
+check them against the *pinned versions*. The reviewer's own note — that the
+advisories were not independently reproduced beyond checking pinned versions —
+turns out to be the decisive gap.
+
+This also settles the contradiction with §2, which listed dependencies as clean.
+Both statements were defensible on the evidence each had; the lookup shows §2 was
+correct, though for a weaker reason than stated — exact pinning is not itself
+protection, and the pins happened to be current.
+
+**No upgrade is warranted.** `AGENTS.md` §4 and `CLAUDE.md` forbid changing pins
+without approval, and there is now nothing to fix. Note that `pytest` does not
+reach the runtime image at all: the Dockerfile copies only `app/`, so a test-only
+dependency could not affect a running container regardless.
+
+Sources: [python-dotenv advisory](https://github.com/advisories/GHSA-mf9w-mj56-hr94) ·
+[pytest advisory](https://github.com/advisories/ghsa-6w46-j5rx-g56g) ·
+[CVE-2025-71176 detail](https://www.cvedetails.com/cve/CVE-2025-71176/)
 
 ### Observation on the shape of AI coverage
 
@@ -159,7 +197,7 @@ differs on the third:
 |---|---|---|---|
 | 1 | S0 — no auth | "Add authentication, authorization, and task ownership before any real deployment" (Medium if deployed, Backend) | **Yes.** The second review adds *task ownership*, which this review did not raise — with no users there is no owner concept, so it is a real extension |
 | 2 | S1 — unbounded `description`/`assignee` | "Bound request and storage growth for task fields and total task count" (Medium, Backend) | **Yes**, and broader: it also bounds *total task count*, which this review missed entirely. The store has no cap on the number of tasks, only on some field lengths |
-| 3 | S2 — unescaped `innerHTML` | "Upgrade vulnerable/dev-risk dependencies and tighten supply-chain pins" (Medium, Platform) | **No.** Unreconciled — see §4. The dependency advisories are unverified, and this review graded CI tag pinning as Noise |
+| 3 | S2 — unescaped `innerHTML` | "Upgrade vulnerable/dev-risk dependencies and tighten supply-chain pins" (Medium, Platform) | **No — resolved against the second review.** The advisory lookup in §4 shows both pinned versions are already patched, so there is nothing to upgrade. S2 stands as rank 3 |
 
 Two items from the second review are genuine gaps in this one: **task ownership**
 as a concept, and a cap on **total task count** rather than only field lengths.
