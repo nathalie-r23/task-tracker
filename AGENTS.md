@@ -151,14 +151,18 @@ localhost/127.0.0.1 port. Credentials are disabled — there is no auth.
 
 Recorded so an agent does not rediscover them and report them as new:
 
-- Docker has **never been built or run** on the development machine — the engine
-  would not start. All image claims rest on `.github/workflows/docker-verify.yml`
-  running on GitHub runners. See `docs/module4/docker-security-log.md`.
+- Docker **has** been built and run locally (2026-08-15) after WSL was installed;
+  the engine had previously refused to start. Four of five checks passed on
+  observation. The fifth failed: `.dockerignore` was shipping nested
+  `__pycache__` into the image because bare patterns match only top-level
+  entries. Fixed with `**/` prefixes. See `docs/module4/docker-security-log.md`.
+- Both `.dockerignore` assertions in `.github/workflows/docker-verify.yml` are
+  **non-discriminating on a CI runner** — a fresh checkout has no bytecode to
+  exclude and none of the other checked paths are ever copied into the runtime
+  stage, so both pass regardless of the file's contents. Do not treat them as
+  evidence that `.dockerignore` works.
 - `tests/verify_a.py` is a tracked print-based script, not a pytest module — it
   defines no `test_` functions, so pytest collects nothing from it.
-- `docs/decisions/0001-documentation-verification.md` is a **draft**: two
-  sections are still marked `DRAFT - REWRITE IN MY OWN WORDS` and one sentence
-  is an unfilled placeholder. This is intentional; the author will rewrite them.
 - The top-level `docs/*.md` files are **deliberate pointers** to the full
   documents in `docs/midcourse/`, not stale duplicates. `docs/README.md`
   explains why. Do not propose deleting either set.

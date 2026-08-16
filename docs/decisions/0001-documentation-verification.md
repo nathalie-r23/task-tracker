@@ -91,7 +91,7 @@ Rejected. The claims that turned out to be wrong were also the useful ones —
 status codes, limits, null semantics. Removing them would remove the value along
 with the risk.
 
-## 4. DRAFT - REWRITE IN MY OWN WORDS — Trade-offs
+## 4. Trade-offs
 
 - **Verification costs real time.** Confirming the five claims above meant writing
   a throwaway probe script and running it against the app. That is slower than
@@ -147,7 +147,7 @@ no database, no authentication, no persistence, and nothing is deployed or
 published to a registry. Verification here means "the documentation matches the
 code", not "the system is hardened".
 
-## 6. DRAFT - REWRITE IN MY OWN WORDS — Open Questions
+## 6. Open Questions
 
 1. **Should any of this run in CI?** A check that the OpenAPI `description` has not
    gone stale is cheap and would have caught the "Module 1 skeleton" string
@@ -182,4 +182,19 @@ code", not "the system is hardened".
 
 ---
 
-*I would do this differently by...*
+## 7. What I would do differently
+
+I would do this differently by verifying claims **as they are written** rather
+than auditing them afterwards. Every false claim this note describes was caught
+in a retrospective sweep, which means each one was true-looking enough to survive
+the moment it was written and however many readings came after. The `.dockerignore`
+defect makes the cost concrete: it was written, reviewed, and passed CI for weeks,
+and it took a single `docker build` on a machine that had run the test suite to
+expose it. A check that runs at writing time costs seconds; the same check run
+weeks later costs a re-read of everything written in between.
+
+I would also stop treating a green check as evidence without asking what makes it
+red. Two assertions in `docker-verify.yml` had been passing for weeks and could
+not have failed — a fresh runner has no bytecode to exclude, so the step
+succeeded for want of anything to test. That is worse than no check, because it
+buys confidence rather than earning it.
