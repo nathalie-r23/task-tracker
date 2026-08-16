@@ -110,5 +110,6 @@ machine that had run the test suite, and only after the engine could start.
 
 ## Items still to complete
 
-- ☐ Frontend baseline sentence (Baseline section)
-- ☐ Latest green Actions run link (CI section)
+None. The two placeholders this section previously tracked are both closed:
+the frontend baseline was verified in the browser on 2026-08-15, and CI run #14
+was confirmed green in the Actions tab the same day.
