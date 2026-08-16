@@ -31,12 +31,22 @@ Risk rubric:
 | Real external data used by mistake | — | **See §1.1** | Three incidents observed in-session; none reached the High tier, but all three are habits that would | See §1.1 |
 | Shared with **GitHub Copilot** — feature code in the editor | 2–3 | **Low** | Task Tracker source only: models, validators, tests and board code, none of it proprietary or carrying data. One incident of a *wrong suggestion* rather than a disclosure — it proposed `<=` for the overdue comparison, which a test caught. No credentials or personal data recalled | Same rule as the rest: keep credential files out of editor context, and treat a plausible completion as unverified until a test runs |
 | Shared with **Codex App** — repo diff and context for review | 5 | **Low** | The `ci-setup` diff and repository context for the Module 5 security review. No secrets; it produced findings, which were graded rather than accepted. Its dependency advisories for `python-dotenv` and `pytest` were checked and both affected versions below our pins | Fine as-is for a public course repo. On a private repo, note that the diff and its context leave the machine |
-| Shared with **Cursor** — not used on this project | — | **n/a** | Not used during this course. The Decision Card names it for future feature work, which is an intention rather than a record | Nothing to change. If it is used later, it needs the same audit as the rows above |
+| Shared with **Cursor** — feature code during Module 3 | 3 | **Low** | Task Tracker source only. Evidenced rather than recalled: commit `8c547b4` ("module 3 - before refactor, functionality ok") carries `Co-authored-by: Cursor <cursoragent@cursor.com>`, and Cursor appears in the repository's Contributors list. No credentials or personal data recalled, and no incident recalled | Same rule as the other editors: keep credential files out of the workspace context, and treat a plausible multi-file edit as unverified until the suite runs |
 
-**The three rows above are recall, not transcript evidence**, and the difference
-matters: "none recalled" is a weaker claim than "none found." No session logs
-were reviewed for Copilot or Codex. Both retain chat history, so ten minutes of
-scrolling would upgrade those two rows — that check has not been done.
+**The three rows above are mostly recall, not transcript evidence**, and the
+difference matters: "none recalled" is a weaker claim than "none found." No
+session logs were reviewed for any of the three. All retain chat history, so
+scrolling would upgrade these rows — that check has not been done.
+
+**One correction worth recording, because it shows how weak recall is.** The
+Cursor row first read "not used on this project" — written from memory and
+confirmed twice in conversation. The repository disagreed: commit `8c547b4`
+carries a `Co-authored-by: Cursor <cursoragent@cursor.com>` trailer, and Cursor
+is listed among this repository's three Contributors on GitHub. A tool used for
+part of a module was forgotten within weeks, and the error was caught only
+because the Contributors panel happened to be visible in a screenshot. Anything
+in this document not backed by a commit, a transcript or a command should be read
+with that in mind.
 
 **The one question that could reach High:** did any of them ever receive a
 `.env`, a credential, or a stack trace from a project that was not this toy?

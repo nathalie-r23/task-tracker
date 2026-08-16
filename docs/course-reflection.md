@@ -12,7 +12,10 @@ which would have marked tasks due *today* as overdue; a test caught it and I
 changed it to `<` (`app/models.py:92`, and `test_due_today_is_not_overdue` in
 `tests/test_tasks.py`). It saved me perhaps ten or fifteen minutes, but the edge
 case was still mine to verify — which is the honest summary of that whole phase.
-Module 4 was Docker,
+**Cursor** was also in that phase: commit `8c547b4` carries a Cursor co-author
+trailer from Module 3. I had forgotten that entirely until the repository's
+Contributors list contradicted me, which is its own small lesson about trusting
+recall over records. Module 4 was Docker,
 CI, docstrings and the README, and I used **Claude Code**: that phase was less
 about writing than about running — building an image, hitting an endpoint,
 checking what a container actually contains.
