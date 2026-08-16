@@ -7,9 +7,15 @@ of work more than the quality of the tool. In Modules 2–3 I built features wit
 **GitHub Copilot** — continuous editor pairing, where the next few lines are
 largely determined by the ones above them. Writing a validator that mirrors the
 one above it, or a test that follows an established naming pattern, is exactly
-that shape. Module 4 was Docker, CI, docstrings and the README, and I used
-**Claude Code**: that phase was less about writing than about running — building
-an image, hitting an endpoint, checking what a container actually contains.
+that shape. Working on the overdue rule, it suggested the comparison as `<=`,
+which would have marked tasks due *today* as overdue; a test caught it and I
+changed it to `<` (`app/models.py:92`, and `test_due_today_is_not_overdue` in
+`tests/test_tasks.py`). It saved me perhaps ten or fifteen minutes, but the edge
+case was still mine to verify — which is the honest summary of that whole phase.
+Module 4 was Docker,
+CI, docstrings and the README, and I used **Claude Code**: that phase was less
+about writing than about running — building an image, hitting an endpoint,
+checking what a container actually contains.
 Module 5 was review, security and governance in **Codex App**, which is reading a
 diff and forming a judgement about it without needing to execute anything.
 
