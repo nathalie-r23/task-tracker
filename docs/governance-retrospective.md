@@ -6,8 +6,9 @@ received back, and the personal rules drawn from both.
 **Scope limit, stated first:** the three incidents in §1.1 are **observed** — they
 come from a Claude Code session on 2026-08-15 where the transcript was available.
 Everything else is **recall**. Copilot and Codex are recorded from memory with no
-session history reviewed; Cursor was not used on this project. Recall and
-transcript are different grades of evidence and are kept distinct throughout.
+session history reviewed. Cursor's use is evidenced by a commit trailer rather
+than by memory — memory said it was never used, and memory was wrong. Recall and
+records are different grades of evidence and are kept distinct throughout.
 
 ---
 
