@@ -49,7 +49,7 @@ stands at **125 tests**.
 | Document | What it is |
 |---|---|
 | [security-review.md](security-review.md) | Read-only security review, AI findings graded Valid / False Positive / Noise, reconciliation and top-3 backlog |
-| [governance-retrospective.md](governance-retrospective.md) | What was shared with AI tools, what was received, and three personal usage rules. **One tool audited of four; the line-by-line attestation is unsigned** |
+| [governance-retrospective.md](governance-retrospective.md) | What was shared with AI tools, what was received, and three personal usage rules. Observed evidence for one tool; recall for the rest, kept distinct |
 | [decisions/comments-feature-plan.md](decisions/comments-feature-plan.md) | Gap analysis of the comments feature against a supplied spec — the feature already exists; `author` is the only delta |
 | [architecture.md](architecture.md) | Context-strategy comparison log — three architecture drafts under different context, the verdict, and the rule taken from it |
 | [architecture-A.md](architecture-A.md) · [architecture-B.md](architecture-B.md) · [architecture-C.md](architecture-C.md) | The three drafts, kept unedited as the comparison's evidence |

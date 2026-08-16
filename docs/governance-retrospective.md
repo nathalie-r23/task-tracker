@@ -3,10 +3,11 @@
 A record of what was shared with AI coding tools during this course, what was
 received back, and the personal rules drawn from both.
 
-**Scope limit, stated first:** the evidence below covers **one tool and one
-session** — a Claude Code session on 2026-08-15 working on branch `ci-setup`.
-Copilot, Codex and Cursor were also used during this course and are **not
-audited here**. Rows marked *(unaudited)* need the same treatment.
+**Scope limit, stated first:** the three incidents in §1.1 are **observed** — they
+come from a Claude Code session on 2026-08-15 where the transcript was available.
+Everything else is **recall**. Copilot and Codex are recorded from memory with no
+session history reviewed; Cursor was not used on this project. Recall and
+transcript are different grades of evidence and are kept distinct throughout.
 
 ---
 
@@ -28,16 +29,14 @@ Risk rubric:
 | Frontend code | 3 | **Low** | `frontend/index.html` has a hardcoded `http://localhost:8000` and no keys, analytics IDs or third-party tokens | Fine as-is. On a real frontend, strip API keys and endpoint URLs — those are the assets that live in client code |
 | Dockerfile and CI YAML | 4 | **Low** here · **Medium as a habit** | Verified clean: no `ENV`/`ARG` carrying credentials, both workflows set `permissions: contents: read`, no `secrets.*` references. But CI config is where real projects keep secret names, registry credentials and deploy targets | Grep for `secrets.`, `env:` and registry URLs before pasting. Share job structure, redact the rest |
 | Real external data used by mistake | — | **See §1.1** | Three incidents observed in-session; none reached the High tier, but all three are habits that would | See §1.1 |
-| *(GitHub Copilot — what I shared)* | ☐ | ☐ | ☐ *(what was shared, and whether any incident occurred)* | ☐ |
-| *(Codex App — what I shared)* | ☐ | ☐ | ☐ | ☐ |
-| *(Cursor — what I shared)* | ☐ | ☐ | ☐ | ☐ |
+| Shared with **GitHub Copilot** — feature code in the editor | 2–3 | **Low** | Task Tracker source only: models, validators, tests and board code, none of it proprietary or carrying data. One incident of a *wrong suggestion* rather than a disclosure — it proposed `<=` for the overdue comparison, which a test caught. No credentials or personal data recalled | Same rule as the rest: keep credential files out of editor context, and treat a plausible completion as unverified until a test runs |
+| Shared with **Codex App** — repo diff and context for review | 5 | **Low** | The `ci-setup` diff and repository context for the Module 5 security review. No secrets; it produced findings, which were graded rather than accepted. Its dependency advisories for `python-dotenv` and `pytest` were checked and both affected versions below our pins | Fine as-is for a public course repo. On a private repo, note that the diff and its context leave the machine |
+| Shared with **Cursor** — not used on this project | — | **n/a** | Not used during this course. The Decision Card names it for future feature work, which is an intention rather than a record | Nothing to change. If it is used later, it needs the same audit as the rows above |
 
-**The three rows above are unfilled.** For each tool, record what you shared,
-whether any incident occurred, and a risk level using the same rubric. The
-minimum honest entry is "used for X, no incidents recalled" — but mark it as
-*recall*, not transcript evidence, because those are different claims. Cursor and
-Copilot both retain chat history; ten minutes of scrolling turns "none recalled"
-into "none found."
+**The three rows above are recall, not transcript evidence**, and the difference
+matters: "none recalled" is a weaker claim than "none found." No session logs
+were reviewed for Copilot or Codex. Both retain chat history, so ten minutes of
+scrolling would upgrade those two rows — that check has not been done.
 
 **The one question that could reach High:** did any of them ever receive a
 `.env`, a credential, or a stack trace from a project that was not this toy?
@@ -67,23 +66,26 @@ repo weren't a toy."
 
 | Generated thing | Module | Where it lives now | Do I understand it line by line? |
 |---|---|---|---|
-| Backend models and validators | 2 | `app/models.py` — incl. `TaskUpdate.validate_title` and `validate_description` at :128-144, added this session | ☐ *(answer: Yes / No / Partial — see §2.1 for what a Yes claims)* |
-| Frontend board and drag-and-drop logic | 3 | `frontend/index.html` (2160 lines) | ☐ *(answer: Yes / No / Partial)* |
-| CI workflow | 4 | `.github/workflows/ci.yml`, `docker-verify.yml` | ☐ *(answer: Yes / No / Partial)* |
-| Dockerfile | 4 | `Dockerfile`, `.dockerignore` | ☐ *(answer: Yes / No / Partial)* |
-| Security findings and plans | 5 | `docs/security-review.md` | ☐ *(answer: Yes / No / Partial)* |
+| Backend models and validators | 2 | `app/models.py` — incl. `TaskUpdate.validate_title` and `validate_description` at :128-144 | **Partial** — I can explain what the validators do and why `title` rejects null while `description` clears to `""`, but I have not worked through the Pydantic behaviour they depend on myself |
+| Frontend board and drag-and-drop logic | 3 | `frontend/index.html` (2160 lines) | **No** — most of the file has never been read, by me or by any review in this repo |
+| CI workflow | 4 | `.github/workflows/ci.yml`, `docker-verify.yml` | **Partial** — I accepted a step that later turned out to be incapable of failing, which is the clearest evidence that my understanding was incomplete when I approved it |
+| Dockerfile | 4 | `Dockerfile`, `.dockerignore` | **Yes** — 49 commented lines, and I have now built and run the image and checked its user, contents and health endpoint |
+| Security findings and plans | 5 | `docs/security-review.md` | **Yes** — I graded all seven findings and rejected four, which required understanding each well enough to disagree with it |
 
 Add a half-sentence to anything that is not a clean Yes. A **No** is a
 legitimate entry and a more useful retrospective record than an unexamined Yes.
 
-### 2.1 Why this column is unsigned
+### 2.1 What those answers claim
 
-This is a personal attestation and cannot be delegated to the tool that wrote
-the code. It is left blank deliberately rather than filled in.
+Two **Yes**, two **Partial**, one **No**. The mix is the point: a column of five
+Yeses would be the least believable version of this table, and the two weakest
+rows are backed by specific evidence of incomplete understanding rather than by
+modesty.
 
 A line-by-line walkthrough of the highest-risk item — the validators at
 `app/models.py:128-144` — was produced during this course and identified the
-specific things a "yes" would require defending:
+specific things a "Yes" there would require defending, which is why that row is
+**Partial**:
 
 - Why `@field_validator` must sit above `@classmethod`, and what breaks if not.
 - Why the validator does **not** run when a field is omitted from the payload —
@@ -95,8 +97,9 @@ specific things a "yes" would require defending:
 - What the `exclude_unset=True` call at `app/storage.py:185` contributes — the
   other half of the mechanism, in a different file.
 
-**To complete:** answer yes or no per row. A "no" is a more useful retrospective
-entry than an unexamined "yes."
+The frontend row is a flat **No** for the same reason in reverse: no review in
+this repository has read more than about 400 of its 2160 lines, so there is no
+basis for claiming otherwise.
 
 ---
 
@@ -119,9 +122,10 @@ disclosed via `git show`, and the AUB-copyrighted slide with a visible person.
 contents of a credential file, an email address in command output, or a
 screenshot of third-party material.
 
-**Still to confirm:** whether any equivalent incident occurred in Copilot, Codex
-or Cursor. Those sessions are unaudited, and the rule is only as good as its
-coverage.
+**Coverage limit:** no equivalent incident is recalled from Copilot or Codex, but
+neither set of session logs was reviewed, so this is "none recalled" rather than
+"none found." The rule is only as good as its coverage, and its coverage is one
+tool's transcript plus memory for the rest.
 
 ### Rule 2 — What I will always verify before accepting
 
@@ -164,11 +168,14 @@ because they were written out at the end of the session that produced them.
 
 ## 4. What this retrospective does not cover
 
-- **Three of four tools.** Copilot, Codex and Cursor received code and context
-  during this course. Placeholder rows exist in §1 but are **unfilled**, so any
-  incident in those sessions remains undocumented. This scope limit stands until
-  those three rows carry content.
-- **The line-by-line attestation** in §2 is **unanswered** — five checkboxes
-  awaiting Yes / No / Partial.
-- **Modules 2 and 3** are covered only by the summary rows in §1; the detailed
-  incident record in §1.1 is from a single Module 4/5 session.
+- **Two tools are covered by recall, not records.** The Copilot and Codex rows in
+  §1 describe what was shared from memory; no session history was reviewed for
+  either. Both retain chat logs, so those rows could be upgraded from "none
+  recalled" to "none found" — that has not been done. Cursor was not used on this
+  project, so there is nothing to audit there.
+- **Only §1.1 rests on observed evidence.** Those three incidents come from a
+  single Claude Code session where the transcript was available. Everything in
+  §1 covering Modules 2–3 is summary-level.
+- **The attestation in §2 is self-assessed**, which is what an attestation is —
+  but it is not the same as being tested. Only the backend row has a written
+  walkthrough behind its answer.
