@@ -57,8 +57,11 @@
 
 ## Decision Card
 
-- For a new feature I reach for: ___
-- For a code review I reach for: ___
+- For a new feature I reach for: **Cursor** — larger implementation loops across
+  several files, where I want to steer edit by edit.
+- For a code review I reach for: **Codex App** — desktop review and planning.
+  With the caveat that on this project the useful part was grading every finding
+  myself: seven came back, three graded Valid.
 - For debugging I reach for: **Claude Code** — every real defect I found this
   course came from running something, not reading it.
 - For infrastructure I reach for: **general chat to author, a terminal tool to
