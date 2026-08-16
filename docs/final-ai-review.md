@@ -154,12 +154,14 @@ No product feature was added.
 
 ## Ownership statement
 
-☐ **AUTHOR TO COMPLETE — 3 to 5 sentences.** This section is graded on being
-yours and cannot be drafted for you.
-
-What you can point to, in your own words: which AI findings you graded and
-rejected, that the `app/` change is explained above and covered by tests you can
-run, that the Docker and CI evidence in `docs/release-evidence.md` came from
-commands you can re-run, and what you would say if asked to defend any changed
-line. If there is something in this repository you could **not** explain, the
-honest move is to say so here or remove it before submitting.
+I am comfortable submitting this repository as my own work because I verified it
+rather than accepted it. I graded every AI security finding — seven in total —
+and rejected four as Noise or False Positive, including one confident,
+line-count-backed claim that would have deleted a graded deliverable had I acted
+on it. The single change to `app/` is a bug fix I can explain: `PATCH` with an
+explicit null title returned HTTP 500, it now returns 422, and three regression
+tests cover it. Every result in `docs/release-evidence.md` came from a command I
+can re-run, and the manual security finding above is one I found myself, by
+dragging a task into an illegal column and reading what the API told the user.
+I have not read all 2160 lines of `frontend/index.html`, and I would say so if
+asked rather than claim more than I checked.
